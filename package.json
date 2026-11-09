@@ -22,6 +22,9 @@
   "homepage": "https://github.com/edtjnfnjhfd/KUS-business-#readme",
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
+    "@supabase/supabase-js": "^2.119.0",
+    "@tolokacode/checkbox": "^0.1.1",
+    "immer": "^11.2.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zod": "^4.6.7"

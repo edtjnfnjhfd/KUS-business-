@@ -1,34 +1,42 @@
 import { useMemo, useState } from 'react';
-import { PAYMENTS } from '../store.js';
-import { PERIODS, buildReport, money, num, pct, periodRange } from '../calc.js';
-import { Empty, PeriodPicker, Stat } from '../components/ui.jsx';
+import { paymentLabel } from '../store.js';
+import { PERIODS, buildReport, delta, money, num, pct, periodRange, previousRange } from '../calc.js';
+import { Empty, PageHead, PeriodPicker, Stat } from '../components/ui.jsx';
 import BarChart from '../components/BarChart.jsx';
+
+function Delta({ cur, prev, invert }) {
+  const d = delta(cur, prev);
+  if (d == null || !isFinite(d) || Math.abs(d) < 0.5) return null;
+  const good = invert ? d < 0 : d > 0;
+  return <span className={'delta ' + (good ? 'pos' : 'neg')}>{d > 0 ? '▲' : '▼'} {pct(Math.abs(d))}</span>;
+}
 
 export default function Reports({ state }) {
   const cur = state.settings.currency;
   const [period, setPeriod] = useState('month');
   const [custom, setCustom] = useState({});
   const [showTable, setShowTable] = useState(false);
-  const rep = useMemo(() => buildReport(state, periodRange(period, new Date(), custom)), [state, period, custom]);
+  const range = periodRange(period, new Date(), custom);
+  const rep = useMemo(() => buildReport(state, range), [state, period, custom]); // eslint-disable-line react-hooks/exhaustive-deps
+  const prevR = previousRange(range);
+  const prev = useMemo(() => (prevR ? buildReport(state, prevR) : null), [state, period, custom]); // eslint-disable-line react-hooks/exhaustive-deps
+  const vs = prev ? 'до попер. періоду' : '';
 
   return (
     <section>
-      <header className="page-head">
-        <div>
-          <h1>Звіти</h1>
-          <p className="muted">Скільки заробили: за день, тиждень, місяць або весь час.</p>
-        </div>
-      </header>
+      <PageHead title="Звіти" sub="Скільки заробили: за день, тиждень, місяць або весь час. Стрілки — порівняння з попереднім таким самим періодом." />
       <PeriodPicker value={period} onChange={setPeriod} custom={custom} onCustom={setCustom} periods={PERIODS} />
 
       <div className="stats">
-        <Stat label="Виручка" value={money(rep.revenue, cur)} sub={rep.discount > 0 ? `знижки ${money(rep.discount, cur)}` : `${rep.checks} чеків`} />
+        <Stat label="Виручка" value={money(rep.revenue, cur)} sub={<>{rep.checks} чеків <Delta cur={rep.revenue} prev={prev?.revenue} /></>} />
         <Stat label="Собівартість проданого" value={money(rep.cost, cur)} sub="інгредієнти + пакування" />
-        <Stat label="Валовий прибуток" value={money(rep.profit, cur)} sub={`маржа ${pct(rep.marginPct)}`} />
-        <Stat label="Інші витрати" value={money(rep.expenses, cur)} sub="оренда, реклама…" />
-        <Stat label="Чистий прибуток" value={money(rep.net, cur)} tone={rep.net < 0 ? 'neg' : 'pos'} sub="валовий − витрати" />
-        <Stat label="Продано" value={`${num(rep.qty)} шт`} sub={`сер. чек ${money(rep.avgCheck, cur)}`} />
+        <Stat label="Валовий прибуток" value={money(rep.profit, cur)} sub={<>маржа {pct(rep.marginPct)} <Delta cur={rep.profit} prev={prev?.profit} /></>} />
+        <Stat label="Витрати" value={money(rep.expenses, cur)} sub="оренда, реклама, зарплата…" />
+        {rep.losses > 0 && <Stat label="Списання і нестачі" value={money(rep.losses, cur)} tone="neg" />}
+        <Stat label="Чистий прибуток" value={money(rep.net, cur)} tone={rep.net < 0 ? 'neg' : 'pos'} sub={<>валовий − витрати − списання <Delta cur={rep.net} prev={prev?.net} /></>} />
+        <Stat label="Продано" value={`${num(rep.qty)} шт`} sub={<>сер. чек {money(rep.avgCheck, cur)} <Delta cur={rep.avgCheck} prev={prev?.avgCheck} /></>} />
       </div>
+      {vs && <p className="muted small">▲▼ — {vs}</p>}
 
       {rep.checks === 0 && rep.expenses === 0 ? <Empty icon="📊" title="За цей період немає даних" /> : (
         <>
@@ -61,8 +69,8 @@ export default function Reports({ state }) {
                         <tr key={p.name}>
                           <td>{p.name}</td>
                           <td className="r">{num(p.qty)}</td>
-                          <td className="r">{money(p.revenue, cur)}</td>
-                          <td className="r">{money(p.profit, cur)}</td>
+                          <td className="r nowrap">{money(p.revenue, cur)}</td>
+                          <td className="r nowrap">{money(p.profit, cur)}</td>
                           <td className="r muted">{pct(rep.revenue ? (p.revenue / rep.revenue) * 100 : 0)}</td>
                         </tr>
                       ))}
@@ -74,7 +82,7 @@ export default function Reports({ state }) {
             <div className="card pad">
               <h3>Оплати</h3>
               {rep.payments.length === 0 ? <p className="muted">—</p> : (
-                <ul className="plain kv">{rep.payments.map((p) => <li key={p.key}><span>{PAYMENTS[p.key] || p.key}</span><b>{money(p.amount, cur)}</b></li>)}</ul>
+                <ul className="plain kv">{rep.payments.map((p) => <li key={p.key}><span>{paymentLabel(state, p.key)}</span><b>{money(p.amount, cur)}</b></li>)}</ul>
               )}
               <h3>Витрати за категоріями</h3>
               {rep.expCats.length === 0 ? <p className="muted">Витрат немає</p> : (

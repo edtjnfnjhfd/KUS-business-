@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { money } from '../calc.js';
 
-const SERIES = [
+const DEFAULT_SERIES = [
   { key: 'revenue', label: 'Виручка', color: 'var(--series-1)' },
   { key: 'profit', label: 'Валовий прибуток', color: 'var(--series-2)' },
 ];
@@ -15,7 +15,7 @@ function niceMax(v) {
 }
 
 /** Згруповані стовпчики «виручка / прибуток» з підказкою при наведенні. */
-export default function BarChart({ data, byMonth, currency }) {
+export default function BarChart({ data, byMonth, currency, series: SERIES = DEFAULT_SERIES, xLabel, title, height = 240 }) {
   const ref = useRef(null);
   const [w, setW] = useState(600);
   const [hover, setHover] = useState(null);
@@ -28,19 +28,20 @@ export default function BarChart({ data, byMonth, currency }) {
     return () => ro.disconnect();
   }, []);
 
-  const h = 240;
+  const h = height;
   const pad = { l: 56, r: 8, t: 12, b: 28 };
   const iw = w - pad.l - pad.r;
   const ih = h - pad.t - pad.b;
-  const maxV = niceMax(Math.max(0, ...data.map((d) => Math.max(d.revenue, d.profit))));
-  const minV = Math.min(0, ...data.map((d) => d.profit));
+  const maxV = niceMax(Math.max(0, ...data.flatMap((d) => SERIES.map((sr) => d[sr.key] || 0))));
+  const minV = Math.min(0, ...data.flatMap((d) => SERIES.map((sr) => d[sr.key] || 0)));
   const lo = minV < 0 ? -niceMax(-minV) : 0;
   const y = (v) => pad.t + ih - ((v - lo) / (maxV - lo)) * ih;
   const step = iw / data.length;
-  const bw = Math.max(1, Math.min(18, (step - 4) / 2));
+  const n = SERIES.length;
+  const bw = Math.max(1, Math.min(18, (step - 4 - (n - 1) * 2) / n));
   const ticks = [lo, ...[0.25, 0.5, 0.75, 1].map((k) => lo + (maxV - lo) * k)].filter((v, i, a) => a.indexOf(v) === i);
   const labelEvery = Math.ceil(data.length / Math.max(1, Math.floor(iw / 44)));
-  const fmtLabel = (d) => (byMonth ? `${MONTHS[d.date.getMonth()]} ${String(d.date.getFullYear()).slice(2)}` : `${d.date.getDate()}.${String(d.date.getMonth() + 1).padStart(2, '0')}`);
+  const fmtLabel = (d, i) => (xLabel ? xLabel(d, i) : byMonth ? `${MONTHS[d.date.getMonth()]} ${String(d.date.getFullYear()).slice(2)}` : `${d.date.getDate()}.${String(d.date.getMonth() + 1).padStart(2, '0')}`);
   const short = (v) => (Math.abs(v) >= 1000 ? `${Math.round(v / 100) / 10}k` : Math.round(v));
 
   const bar = (x, v, color, key) => {
@@ -61,9 +62,10 @@ export default function BarChart({ data, byMonth, currency }) {
   return (
     <div className="chart viz-root" ref={ref}>
       <div className="legend">
-        {SERIES.map((s) => <span key={s.key}><i style={{ background: s.color }} />{s.label}</span>)}
+        {title && <b className="legend-title">{title}</b>}
+        {SERIES.length > 1 && SERIES.map((s) => <span key={s.key}><i style={{ background: s.color }} />{s.label}</span>)}
       </div>
-      <svg width={w} height={h} role="img" aria-label="Графік виручки та прибутку">
+      <svg width={w} height={h} role="img" aria-label={title || 'Графік виручки та прибутку'}>
         {ticks.map((t) => (
           <g key={t}>
             <line x1={pad.l} x2={w - pad.r} y1={y(t)} y2={y(t)} className="grid-line" />
@@ -71,13 +73,12 @@ export default function BarChart({ data, byMonth, currency }) {
           </g>
         ))}
         {data.map((d, i) => {
-          const x0 = pad.l + i * step + (step - (bw * 2 + 2)) / 2;
+          const x0 = pad.l + i * step + (step - (bw * n + (n - 1) * 2)) / 2;
           return (
             <g key={d.key}>
               {hover === i && <rect x={pad.l + i * step} y={pad.t} width={step} height={ih} className="hover-band" />}
-              {bar(x0, d.revenue, SERIES[0].color, 'r')}
-              {bar(x0 + bw + 2, d.profit, SERIES[1].color, 'p')}
-              {i % labelEvery === 0 && <text x={pad.l + i * step + step / 2} y={h - 8} textAnchor="middle" className="axis-text">{fmtLabel(d)}</text>}
+              {SERIES.map((sr, k) => bar(x0 + k * (bw + 2), d[sr.key] || 0, sr.color, sr.key))}
+              {i % labelEvery === 0 && <text x={pad.l + i * step + step / 2} y={h - 8} textAnchor="middle" className="axis-text">{fmtLabel(d, i)}</text>}
               <rect x={pad.l + i * step} y={pad.t} width={step} height={ih} fill="transparent"
                 onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} onTouchStart={() => setHover(i)} />
             </g>
@@ -87,9 +88,9 @@ export default function BarChart({ data, byMonth, currency }) {
       </svg>
       {hv && (
         <div className="tooltip" style={{ left: Math.min(w - 170, Math.max(0, pad.l + hover * step + step / 2 - 80)) }}>
-          <div className="tt-title">{byMonth ? fmtLabel(hv) : hv.date.toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric', month: 'long' })}</div>
+          <div className="tt-title">{xLabel || byMonth || !hv.date ? fmtLabel(hv, hover) : hv.date.toLocaleDateString('uk-UA', { weekday: 'short', day: 'numeric', month: 'long' })}</div>
           {SERIES.map((s) => <div key={s.key} className="tt-row"><i style={{ background: s.color }} /><span>{s.label}</span><b>{money(hv[s.key], currency)}</b></div>)}
-          <div className="tt-row"><span className="muted">Продано</span><b>{hv.qty} шт</b></div>
+          {hv.qty != null && <div className="tt-row"><span className="muted">Продано</span><b>{Math.round(hv.qty)} шт</b></div>}
         </div>
       )}
     </div>

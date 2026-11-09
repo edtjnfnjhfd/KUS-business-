@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { setIngredientPrice } from '../store.js';
 import { UNITS, bigUnitPrice, buildReport, fmtQty, marginInfo, money, pct, periodRange, round2, toBase, uid } from '../calc.js';
 import { askAnalyst, imageToBase64, parsePurchases, parseRecipe, searchPrices } from '../ai.js';
-import { Empty, Num } from '../components/ui.jsx';
+import { Empty, Num, PageHead } from '../components/ui.jsx';
+
+const aiCfg = (local) => ({ apiKey: local.apiKey, model: local.model || 'claude-opus-5-5' });
 
 const TOOLS = [
   { id: 'purchases', label: '🧾 Чек / список покупок' },
@@ -13,22 +15,17 @@ const TOOLS = [
 
 export default function Assistant(props) {
   const [tool, setTool] = useState('purchases');
-  const hasKey = !!props.state.settings.apiKey;
+  const hasKey = !!props.local.apiKey;
   return (
     <section>
-      <header className="page-head">
-        <div>
-          <h1>AI-помічник</h1>
-          <p className="muted">Внесіть чек фото чи текстом, знайдіть ринкові ціни, перетворіть рецепт на техкарту або спитайте поради. Ви завжди бачите результат перед збереженням.</p>
-        </div>
-      </header>
+      <PageHead title="AI-помічник" sub="Внесіть чек фото чи текстом, знайдіть ринкові ціни, перетворіть рецепт на техкарту або спитайте поради. Ви завжди бачите результат перед збереженням." />
       {!hasKey && (
         <div className="alert warn">
           Щоб AI запрацював, додайте API-ключ Anthropic у{' '}
           <button className="link" onClick={() => props.go('settings')}>Налаштуваннях</button>. Решта програми працює і без нього.
         </div>
       )}
-      <div className="chips tabs">
+      <div className="chips tabs scroll-x">
         {TOOLS.map((t) => <button key={t.id} className={'chip' + (tool === t.id ? ' on' : '')} onClick={() => setTool(t.id)}>{t.label}</button>)}
       </div>
       {tool === 'purchases' && <Purchases {...props} />}
@@ -67,13 +64,16 @@ function MatchSelect({ ingredients, value, onChange, baseUnit }) {
 }
 
 // ───────────── 1. Чек / покупки ─────────────
-function Purchases({ state, update }) {
+function Purchases({ state, update, local }) {
   const cur = state.settings.currency;
   const [text, setText] = useState('');
   const [image, setImage] = useState(null);
   const [rows, setRows] = useState(null);
   const [comment, setComment] = useState('');
   const [done, setDone] = useState('');
+  const [asSupply, setAsSupply] = useState(true);
+  const [supplier, setSupplier] = useState('');
+  const [payAcc, setPayAcc] = useState('cash');
   const { busy, error, run } = useRun();
 
   const onFile = async (e) => {
@@ -82,7 +82,7 @@ function Purchases({ state, update }) {
   };
   const analyze = () => run(async () => {
     setDone('');
-    const res = await parsePurchases(state.settings, state.ingredients, { text: text.trim(), image });
+    const res = await parsePurchases(aiCfg(local), state.ingredients, { text: text.trim(), image });
     const known = new Set(state.ingredients.map((i) => i.id));
     setRows(res.items.map((it) => {
       const b = toBase(it.qty, it.unit);
@@ -95,17 +95,22 @@ function Purchases({ state, update }) {
 
   const apply = () => {
     let upd = 0; let created = 0;
+    const supplyItems = [];
     update((d) => {
       for (const r of rows) {
         if (!r.apply || !(r.qty > 0)) continue;
-        if (r.matchId) { setIngredientPrice(d, r.matchId, { packPrice: round2(r.price), packQty: r.qty }, 'чек (AI)'); upd++; }
+        let id = r.matchId;
+        if (id) { setIngredientPrice(d, id, { packPrice: round2(r.price), packQty: r.qty }, 'чек (AI)'); upd++; }
         else {
-          d.ingredients.push({ id: uid(), name: r.name, category: r.category || 'Інше', baseUnit: r.baseUnit, packQty: r.qty, packPrice: round2(r.price), note: '', updatedAt: new Date().toISOString(), lastSource: 'чек (AI)', history: [] });
+          id = uid();
+          d.ingredients.push({ id, name: r.name, category: r.category || 'Інше', baseUnit: r.baseUnit, packQty: r.qty, packPrice: round2(r.price), minStock: 0, note: '', updatedAt: new Date().toISOString(), lastSource: 'чек (AI)', history: [] });
           created++;
         }
+        supplyItems.push({ ingredientId: id, qty: r.qty, total: round2(r.price) });
       }
+      if (asSupply && supplyItems.length) d.supplies.push({ id: uid(), date: new Date().toISOString(), supplier: supplier || 'Чек (AI)', accountId: payAcc, note: 'Внесено через AI', items: supplyItems });
     });
-    setDone(`Готово: оновлено ${upd}, додано ${created}. Собівартість техкарт перераховано.`);
+    setDone(`Готово: оновлено ${upd}, додано ${created}${asSupply ? ', залишки на складі збільшено' : ''}. Собівартість техкарт перераховано.`);
     setRows(null); setText(''); setImage(null);
   };
 
@@ -152,8 +157,17 @@ function Purchases({ state, update }) {
               </table>
             </div>
           )}
+          <div className="form-grid">
+            <label className="check align-end"><input type="checkbox" checked={asSupply} onChange={(e) => setAsSupply(e.target.checked)} /> Записати як постачання (додати на склад)</label>
+            {asSupply && <label className="field"><span className="field-label">Постачальник</span><input value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="Metro, Сільпо…" /></label>}
+            {asSupply && (
+              <label className="field"><span className="field-label">Оплачено з</span>
+                <select value={payAcc} onChange={(e) => setPayAcc(e.target.value)}>{state.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}<option value="">Не з рахунків бізнесу</option></select>
+              </label>
+            )}
+          </div>
           <div className="row gap">
-            <button className="btn primary" onClick={apply} disabled={!rows.some((r) => r.apply)}>Зберегти ціни</button>
+            <button className="btn primary" onClick={apply} disabled={!rows.some((r) => r.apply)}>Зберегти</button>
             <button className="btn ghost" onClick={() => setRows(null)}>Скасувати</button>
           </div>
         </>
@@ -163,7 +177,7 @@ function Purchases({ state, update }) {
 }
 
 // ───────────── 2. Середні ціни ─────────────
-function Prices({ state, update }) {
+function Prices({ state, update, local }) {
   const cur = state.settings.currency;
   const [city, setCity] = useState(state.settings.city || '');
   const [sel, setSel] = useState(() => new Set(state.ingredients.filter((i) => i.category !== 'Пакування').map((i) => i.id)));
@@ -176,7 +190,7 @@ function Prices({ state, update }) {
   const search = () => run(async () => {
     setDone('');
     const chosen = state.ingredients.filter((i) => sel.has(i.id));
-    const res = await searchPrices(state.settings, chosen, city);
+    const res = await searchPrices(aiCfg(local), chosen, city);
     setRows(res.items.filter((it) => sel.has(it.ingredientId)).map((it) => {
       const b = toBase(it.packQty, it.unit);
       const ing = state.ingredients.find((i) => i.id === it.ingredientId);
@@ -248,13 +262,13 @@ function Prices({ state, update }) {
 }
 
 // ───────────── 3. Рецепт → техкарта ─────────────
-function RecipeImport({ state, update, go }) {
+function RecipeImport({ state, update, go, local }) {
   const [text, setText] = useState('');
   const [draft, setDraft] = useState(null);
   const { busy, error, run } = useRun();
 
   const analyze = () => run(async () => {
-    const res = await parseRecipe(state.settings, state.ingredients, text);
+    const res = await parseRecipe(aiCfg(local), state.ingredients, text);
     const known = new Map(state.ingredients.map((i) => [i.id, i]));
     setDraft({
       name: res.name, yieldQty: res.yieldQty, note: res.note,
@@ -352,7 +366,7 @@ const SUGGEST = [
   'Що найбільше впливає на собівартість Classic?',
 ];
 
-function Analyst({ state, costs }) {
+function Analyst({ state, costs, local }) {
   const [q, setQ] = useState('');
   const [chat, setChat] = useState([]);
   const { busy, error, run } = useRun();
@@ -363,7 +377,7 @@ function Analyst({ state, costs }) {
     setQ('');
     const history = chat.map((m) => ({ role: m.role, content: m.text }));
     setChat((c) => [...c, { role: 'user', text }]);
-    const answer = await askAnalyst(state.settings, businessContext(state, costs), text, history);
+    const answer = await askAnalyst(aiCfg(local), businessContext(state, costs), text, history);
     setChat((c) => [...c, { role: 'assistant', text: answer }]);
   });
 

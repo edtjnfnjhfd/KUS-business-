@@ -207,7 +207,7 @@ export function buildReport(state, range) {
   const sales = state.sales.filter((s) => inRange(s.date, range));
   const expenses = state.expenses.filter((e) => inRange(e.date, range));
 
-  const t = { revenue: 0, cost: 0, profit: 0, qty: 0, discount: 0, checks: sales.length };
+  const t = { revenue: 0, cost: 0, profit: 0, qty: 0, discount: 0, checks: sales.filter((x) => x.type !== 'return').length };
   const byProduct = new Map();
   const byPayment = new Map();
   for (const s of sales) {
@@ -225,9 +225,15 @@ export function buildReport(state, range) {
       byProduct.set(key, p);
     }
   }
-  const expTotal = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const byExpCat = new Map();
-  for (const e of expenses) byExpCat.set(e.category || 'Інше', (byExpCat.get(e.category || 'Інше') || 0) + (Number(e.amount) || 0));
+  const addCat = (k, v) => byExpCat.set(k, (byExpCat.get(k) || 0) + v);
+  for (const e of expenses) addCat(e.category || 'Інше', Number(e.amount) || 0);
+  // Виплати зарплати теж витрати
+  for (const m of state.moneyMoves || []) if (m.type === 'salary' && inRange(m.date, range)) addCat('Зарплата', Math.abs(Number(m.amount) || 0));
+  const expTotal = [...byExpCat.values()].reduce((a, b) => a + b, 0);
+  // Списання і нестачі за інвентаризацією — втрати
+  let losses = 0;
+  for (const a of state.adjustments || []) if (inRange(a.date, range)) { const v = adjustmentValue(state, a); if (v < 0) losses -= v; }
 
   // Динаміка: по днях, або по місяцях якщо період довгий
   let from = range[0];
@@ -265,7 +271,8 @@ export function buildReport(state, range) {
   return {
     ...t,
     expenses: expTotal,
-    net: t.profit - expTotal,
+    losses,
+    net: t.profit - expTotal - losses,
     avgCheck: t.checks ? t.revenue / t.checks : 0,
     marginPct: t.revenue > 0 ? (t.profit / t.revenue) * 100 : 0,
     products: [...byProduct.values()].map((p) => ({ ...p, profit: p.revenue - p.cost })).sort((a, b) => b.revenue - a.revenue),
@@ -300,4 +307,308 @@ export function toLocalInput(d) {
   const x = new Date(d);
   const p = (n) => String(n).padStart(2, '0');
   return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}T${p(x.getHours())}:${p(x.getMinutes())}`;
+}
+
+// ───────────────────────── Склад ─────────────────────────
+
+/**
+ * Розкладає N штук техкарти на інгредієнти (з урахуванням втрат і вкладених техкарт).
+ * Повертає Map<ingredientId, кількість у базових одиницях>.
+ */
+export function explode(state, recipeId, pieces, out = new Map(), stack = new Set()) {
+  const r = state.recipes.find((x) => x.id === recipeId);
+  if (!r || stack.has(recipeId) || !pieces) return out;
+  stack.add(recipeId);
+  const y = Math.max(Number(r.yieldQty) || 0, 0) || 1;
+  const waste = 1 + Math.max(Number(r.wastePct) || 0, 0) / 100;
+  for (const it of r.items || []) {
+    const perPieceQty = (Number(it.qty) || 0) * (it.perPiece ? 1 : 1 / y);
+    if (it.type === 'rec') explode(state, it.refId, pieces * perPieceQty, out, stack);
+    else if (it.refId) out.set(it.refId, (out.get(it.refId) || 0) + pieces * perPieceQty * (it.perPiece ? 1 : waste));
+  }
+  stack.delete(recipeId);
+  return out;
+}
+
+/** Що списати зі складу за позиції чеку: [{ingredientId, qty}] */
+export function consumptionFor(state, items) {
+  const m = new Map();
+  for (const l of items) if (l.recipeId && Number(l.qty) > 0) explode(state, l.recipeId, Number(l.qty), m);
+  return [...m.entries()].map(([ingredientId, qty]) => ({ ingredientId, qty: Math.round(qty * 100) / 100 }));
+}
+
+/** Залишки на складі: Map<ingredientId, qty>. До дати `until` (не включно), якщо задано. */
+export function computeStock(state, until = null) {
+  const st = new Map(state.ingredients.map((i) => [i.id, 0]));
+  const ok = (d) => !until || new Date(d) < until;
+  const add = (id, q) => st.set(id, (st.get(id) || 0) + (Number(q) || 0));
+  for (const s of state.supplies) if (ok(s.date)) for (const it of s.items || []) add(it.ingredientId, it.qty);
+  for (const a of state.adjustments) if (ok(a.date)) for (const it of a.items || []) add(it.ingredientId, it.qty);
+  for (const s of state.sales) if (ok(s.date)) for (const c of s.consumption || []) add(c.ingredientId, -c.qty);
+  return st;
+}
+
+export function supplyTotal(s) {
+  return (s.items || []).reduce((t, i) => t + (Number(i.total) || 0), 0);
+}
+
+/** Вартість коригування (від'ємна = втрата). */
+export function adjustmentValue(state, a) {
+  const byId = new Map(state.ingredients.map((i) => [i.id, i]));
+  if (a.value != null) return a.value;
+  return (a.items || []).reduce((t, it) => t + (Number(it.qty) || 0) * unitPrice(byId.get(it.ingredientId)), 0);
+}
+
+// ───────────────────────── Гроші ─────────────────────────
+
+/** Скільки грошей реально надійшло за чек (без передоплати, яка надійшла раніше). */
+export function saleCashIn(sale) {
+  return saleTotals(sale).revenue - (Number(sale.prepaid) || 0);
+}
+
+/** Усі рухи грошей як плаский список: [{date, accountId, amount, kind, label, ref}] */
+export function moneyFlow(state) {
+  const f = [];
+  for (const s of state.sales) {
+    if (!s.payment || s.payment === 'debt') continue;
+    f.push({ date: s.date, accountId: s.payment, amount: saleCashIn(s), kind: s.type === 'return' ? 'return' : 'sale', label: s.type === 'return' ? 'Повернення' : 'Продаж', ref: s.id });
+  }
+  for (const o of state.orders) {
+    if ((Number(o.prepaid) || 0) > 0 && o.prepaidAccount && !(o.status === 'cancelled' && o.prepaidRefunded)) {
+      f.push({ date: o.prepaidAt || o.createdAt, accountId: o.prepaidAccount, amount: Number(o.prepaid), kind: 'prepayment', label: `Передоплата №${o.number}`, ref: o.id });
+    }
+  }
+  for (const e of state.expenses) if (e.accountId) f.push({ date: e.date, accountId: e.accountId, amount: -(Number(e.amount) || 0), kind: 'expense', label: e.category + (e.note ? ': ' + e.note : ''), ref: e.id });
+  for (const s of state.supplies) if (s.accountId) f.push({ date: s.date, accountId: s.accountId, amount: -supplyTotal(s), kind: 'supply', label: 'Постачання' + (s.supplier ? ': ' + s.supplier : ''), ref: s.id });
+  for (const m of state.moneyMoves) {
+    const a = Number(m.amount) || 0;
+    if (m.type === 'transfer') {
+      f.push({ date: m.date, accountId: m.accountId, amount: -Math.abs(a), kind: 'transfer', label: 'Переказ' + (m.note ? ': ' + m.note : ''), ref: m.id });
+      f.push({ date: m.date, accountId: m.toAccountId, amount: Math.abs(a), kind: 'transfer', label: 'Переказ' + (m.note ? ': ' + m.note : ''), ref: m.id });
+    } else {
+      f.push({ date: m.date, accountId: m.accountId, amount: a, kind: m.type, label: MONEY_TYPES[m.type]?.label + (m.note ? ': ' + m.note : ''), ref: m.id });
+    }
+  }
+  return f;
+}
+
+export const MONEY_TYPES = {
+  deposit: { label: 'Внесення', sign: 1 },
+  withdraw: { label: 'Вилучення / інкасація', sign: -1 },
+  transfer: { label: 'Переказ між рахунками', sign: -1 },
+  debtPayment: { label: 'Погашення боргу', sign: 1 },
+  salary: { label: 'Виплата зарплати', sign: -1 },
+  opening: { label: 'Початковий залишок', sign: 1 },
+};
+
+export function accountBalances(state, until = null) {
+  const b = new Map(state.accounts.map((a) => [a.id, 0]));
+  for (const m of moneyFlow(state)) {
+    if (until && new Date(m.date) >= until) continue;
+    b.set(m.accountId, (b.get(m.accountId) || 0) + m.amount);
+  }
+  return b;
+}
+
+// ───────────────────────── Клієнти ─────────────────────────
+
+export function customerStats(state, customerId) {
+  const sales = state.sales.filter((s) => s.customerId === customerId);
+  let spent = 0; let profit = 0; let bonus = 0; let debt = 0; let last = null;
+  for (const s of sales) {
+    const t = saleTotals(s);
+    spent += t.revenue; profit += t.profit;
+    bonus += (Number(s.bonusEarned) || 0) - (Number(s.bonusUsed) || 0);
+    if (s.payment === 'debt') debt += saleCashIn(s);
+    if (!last || new Date(s.date) > new Date(last)) last = s.date;
+  }
+  for (const m of state.moneyMoves) if (m.type === 'debtPayment' && m.customerId === customerId) debt -= Number(m.amount) || 0;
+  const checks = sales.filter((s) => s.type !== 'return').length;
+  return { spent, profit, bonus: Math.max(0, round2(bonus)), debt: round2(debt), last, checks, avg: checks ? spent / checks : 0, sales };
+}
+
+/** Найближчі дні народження за `days` днів. */
+export function upcomingBirthdays(customers, days = 14, now = new Date()) {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const res = [];
+  for (const c of customers) {
+    if (!c.birthday) continue;
+    const [, m, d] = c.birthday.split('-').map(Number);
+    if (!m || !d) continue;
+    let next = new Date(today.getFullYear(), m - 1, d);
+    if (next < today) next = new Date(today.getFullYear() + 1, m - 1, d);
+    const diff = Math.round((next - today) / 86400000);
+    if (diff <= days) res.push({ customer: c, date: next, inDays: diff });
+  }
+  return res.sort((a, b) => a.inDays - b.inDays);
+}
+
+// ───────────────────────── Зміни ─────────────────────────
+
+export function shiftCash(state, shift, cashAccount = 'cash') {
+  const from = new Date(shift.openedAt);
+  const to = shift.closedAt ? new Date(shift.closedAt) : new Date(8.64e15);
+  let income = 0; let out = 0; let sales = 0; let checks = 0; let cardSales = 0;
+  for (const m of moneyFlow(state)) {
+    const d = new Date(m.date);
+    if (m.accountId !== cashAccount || d < from || d >= to) continue;
+    if (m.amount >= 0) income += m.amount; else out += m.amount;
+  }
+  for (const s of state.sales) {
+    const d = new Date(s.date);
+    if (d < from || d >= to) continue;
+    const t = saleTotals(s);
+    sales += t.revenue; checks += s.type === 'return' ? 0 : 1;
+    if (s.payment !== cashAccount) cardSales += t.revenue;
+  }
+  const expected = (Number(shift.openingCash) || 0) + income + out;
+  return { income, out, expected, sales, checks, cardSales };
+}
+
+// ───────────────────────── Аналітика ─────────────────────────
+
+/** ABC-аналіз: A — перші 80% показника, B — до 95%, C — решта. */
+export function abc(products, key = 'revenue') {
+  const sorted = [...products].sort((a, b) => b[key] - a[key]);
+  const total = sorted.reduce((s, p) => s + Math.max(0, p[key]), 0);
+  let acc = 0;
+  return sorted.map((p) => {
+    const share = total > 0 ? Math.max(0, p[key]) / total : 0;
+    const before = acc;
+    acc += share;
+    const cls = before < 0.8 ? 'A' : before < 0.95 ? 'B' : 'C';
+    return { ...p, share, cum: acc, cls };
+  });
+}
+
+const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
+
+export function breakdowns(state, sales) {
+  const byWeekday = WEEKDAYS.map((label) => ({ key: label, label, revenue: 0, profit: 0, qty: 0 }));
+  const byHour = Array.from({ length: 24 }, (_, h) => ({ key: String(h), label: `${h}:00`, revenue: 0, profit: 0, qty: 0 }));
+  const byChannel = new Map();
+  const byCategory = new Map();
+  const byEmployee = new Map();
+  const recCat = new Map(state.recipes.map((r) => [r.id, r.category || 'Інше']));
+  const emp = new Map(state.employees.map((e) => [e.id, e.name]));
+  const add = (map, key, t) => {
+    const x = map.get(key) || { key, label: key, revenue: 0, profit: 0, qty: 0, checks: 0 };
+    x.revenue += t.revenue; x.profit += t.profit; x.qty += t.qty; x.checks += 1;
+    map.set(key, x);
+  };
+  for (const s of sales) {
+    const t = saleTotals(s);
+    const d = new Date(s.date);
+    for (const b of [byWeekday[(d.getDay() + 6) % 7], byHour[d.getHours()]]) { b.revenue += t.revenue; b.profit += t.profit; b.qty += t.qty; }
+    add(byChannel, s.channel || 'Без каналу', t);
+    add(byEmployee, emp.get(s.employeeId) || 'Без входу за PIN', t);
+    const k = t.gross > 0 ? t.revenue / t.gross : 0;
+    for (const i of s.items || []) {
+      const cat = recCat.get(i.recipeId) || 'Інше';
+      const rev = (Number(i.qty) || 0) * (Number(i.price) || 0) * k;
+      const cost = (Number(i.qty) || 0) * (Number(i.cost) || 0);
+      const x = byCategory.get(cat) || { key: cat, label: cat, revenue: 0, profit: 0, qty: 0 };
+      x.revenue += rev; x.profit += rev - cost; x.qty += Number(i.qty) || 0;
+      byCategory.set(cat, x);
+    }
+  }
+  const sort = (m) => [...m.values()].sort((a, b) => b.revenue - a.revenue);
+  return { byWeekday, byHour, byChannel: sort(byChannel), byCategory: sort(byCategory), byEmployee: sort(byEmployee) };
+}
+
+/** Попередній період такої ж довжини. */
+export function previousRange([from, to]) {
+  if (!from || !to) return null;
+  const len = to - from;
+  return [new Date(from.getTime() - len), new Date(from)];
+}
+
+export function delta(cur, prev) {
+  if (!prev) return cur ? null : 0;
+  return ((cur - prev) / Math.abs(prev)) * 100;
+}
+
+// ───────────────────────── План випічки ─────────────────────────
+
+/**
+ * Скільки замісів якої техкарти треба і чого не вистачає.
+ * need: Map<recipeId, штук> (з замовлень + вручну)
+ */
+export function bakePlan(state, need, stock = computeStock(state)) {
+  // Розкладаємо набори на печиво: «виробляємо» лише техкарти з інгредієнтами
+  const pieces = new Map();
+  const walk = (rid, n, stack = new Set()) => {
+    const r = state.recipes.find((x) => x.id === rid);
+    if (!r || stack.has(rid) || n <= 0) return;
+    stack.add(rid);
+    const y = Math.max(Number(r.yieldQty) || 0, 0) || 1;
+    const hasIng = (r.items || []).some((i) => i.type === 'ing' && !i.perPiece);
+    if (hasIng || !(r.items || []).some((i) => i.type === 'rec')) pieces.set(rid, (pieces.get(rid) || 0) + n);
+    for (const it of r.items || []) if (it.type === 'rec') walk(it.refId, n * (Number(it.qty) || 0) * (it.perPiece ? 1 : 1 / y), stack);
+    stack.delete(rid);
+  };
+  for (const [rid, n] of need) walk(rid, n);
+
+  const rows = [];
+  const ingNeed = new Map();
+  for (const [rid, n] of pieces) {
+    const r = state.recipes.find((x) => x.id === rid);
+    const y = Math.max(Number(r.yieldQty) || 0, 0) || 1;
+    const hasDough = (r.items || []).some((i) => i.type === 'ing' && !i.perPiece);
+    const batches = hasDough ? Math.ceil(n / y - 1e-9) : 0;
+    const make = hasDough ? batches * y : n;
+    rows.push({ recipe: r, pieces: n, batches, make, spare: make - n });
+    // інгредієнти: заміс — на цілі заміси, пакування — на фактичні штуки
+    const waste = 1 + Math.max(Number(r.wastePct) || 0, 0) / 100;
+    for (const it of r.items || []) {
+      if (it.type !== 'ing' || !it.refId) continue;
+      const q = it.perPiece ? (Number(it.qty) || 0) * n : (Number(it.qty) || 0) * batches * waste;
+      ingNeed.set(it.refId, (ingNeed.get(it.refId) || 0) + q);
+    }
+  }
+  // Пакування наборів (штучні позиції наборів)
+  for (const [rid, n] of need) {
+    const r = state.recipes.find((x) => x.id === rid);
+    if (!r || pieces.has(rid)) continue;
+    const y = Math.max(Number(r.yieldQty) || 0, 0) || 1;
+    for (const it of r.items || []) {
+      if (it.type !== 'ing' || !it.refId) continue;
+      ingNeed.set(it.refId, (ingNeed.get(it.refId) || 0) + (Number(it.qty) || 0) * (it.perPiece ? n : n / y));
+    }
+  }
+  const ingredients = [...ingNeed.entries()].map(([id, qty]) => {
+    const ing = state.ingredients.find((i) => i.id === id);
+    const have = stock.get(id) || 0;
+    const short = Math.max(0, qty - have);
+    const packs = ing && ing.packQty > 0 ? Math.ceil(short / ing.packQty - 1e-9) : 0;
+    return { ing, qty, have, short, packs, cost: packs * (ing?.packPrice || 0) };
+  }).filter((x) => x.ing).sort((a, b) => b.short - a.short || a.ing.name.localeCompare(b.ing.name));
+  return { rows: rows.sort((a, b) => a.recipe.name.localeCompare(b.recipe.name)), ingredients };
+}
+
+// ───────────────────────── Зарплата ─────────────────────────
+
+export function payroll(state, range) {
+  return state.employees.map((e) => {
+    const shifts = state.shifts.filter((s) => s.employeeId === e.id && s.closedAt && inRange(s.openedAt, range));
+    const sales = state.sales.filter((s) => s.employeeId === e.id && inRange(s.date, range));
+    const revenue = sales.reduce((t, s) => t + saleTotals(s).revenue, 0);
+    const accrued = shifts.length * (Number(e.ratePerShift) || 0) + revenue * (Number(e.salesPct) || 0) / 100;
+    const paid = state.moneyMoves.filter((m) => m.type === 'salary' && m.employeeId === e.id && inRange(m.date, range)).reduce((t, m) => t + Math.abs(Number(m.amount) || 0), 0);
+    return { employee: e, shifts: shifts.length, revenue, accrued, paid, due: accrued - paid };
+  });
+}
+
+// ───────────────────────── Етикетки ─────────────────────────
+
+/** Склад для етикетки: інгредієнти за спаданням маси (без пакування). */
+export function labelComposition(state, recipeId) {
+  const m = explode(state, recipeId, 1);
+  const byId = new Map(state.ingredients.map((i) => [i.id, i]));
+  return [...m.entries()]
+    .map(([id, q]) => ({ ing: byId.get(id), q }))
+    .filter((x) => x.ing && x.ing.category !== 'Пакування')
+    .sort((a, b) => (b.ing.baseUnit === 'pcs' ? b.q * 50 : b.q) - (a.ing.baseUnit === 'pcs' ? a.q * 50 : a.q))
+    .map((x) => x.ing.labelName || x.ing.name.replace(/\s*\(.*?\)\s*/g, ' ').trim())
+    .join(', ');
 }

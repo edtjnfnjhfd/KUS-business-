@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { INGREDIENT_CATEGORIES, setIngredientPrice } from '../store.js';
-import { UNITS, INPUT_UNITS, bigUnitPrice, fmtDate, fmtQty, money, uid, usedIn, toBase } from '../calc.js';
-import { Empty, Field, Modal, Num, confirmDelete } from '../components/ui.jsx';
+import { UNITS, INPUT_UNITS, bigUnitPrice, computeStock, fmtDate, fmtQty, money, uid, usedIn, toBase } from '../calc.js';
+import { Empty, Field, Modal, Num, PageHead, confirmDelete } from '../components/ui.jsx';
 
 function packInputUnit(ing) {
   if (ing.baseUnit === 'g') return ing.packQty >= 1000 && ing.packQty % 1000 === 0 ? 'kg' : 'g';
@@ -14,6 +14,7 @@ export default function Ingredients({ state, update, costs, go }) {
   const [cat, setCat] = useState('');
   const [editId, setEditId] = useState(null);
   const cur = state.settings.currency;
+  const stock = useMemo(() => computeStock(state), [state]);
 
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -25,23 +26,17 @@ export default function Ingredients({ state, update, costs, go }) {
   const add = () => {
     const id = uid();
     update((d) => {
-      d.ingredients.push({ id, name: 'Новий інгредієнт', category: 'Основа', baseUnit: 'g', packQty: 1000, packPrice: 0, note: '', updatedAt: new Date().toISOString(), history: [] });
+      d.ingredients.push({ id, name: 'Новий інгредієнт', category: 'Основа', baseUnit: 'g', packQty: 1000, packPrice: 0, minStock: 0, note: '', updatedAt: new Date().toISOString(), history: [] });
     });
     setEditId(id);
   };
 
   return (
     <section>
-      <header className="page-head">
-        <div>
-          <h1>Інгредієнти й пакування</h1>
-          <p className="muted">Змініть ціну — собівартість усіх техкарт перерахується автоматично.</p>
-        </div>
-        <div className="row gap">
-          <button className="btn ghost" onClick={() => go('ai')}>✨ Внести чек через AI</button>
-          <button className="btn primary" onClick={add}>+ Додати</button>
-        </div>
-      </header>
+      <PageHead title="Інгредієнти й пакування" sub="Змініть ціну — собівартість усіх техкарт перерахується автоматично. Закупівлі зручніше вносити через «Постачання».">
+        <button className="btn ghost" onClick={() => go('ai')}>✨ Внести чек через AI</button>
+        <button className="btn primary" onClick={add}>+ Додати</button>
+      </PageHead>
 
       <div className="toolbar">
         <input className="search" placeholder="Пошук…" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -55,7 +50,7 @@ export default function Ingredients({ state, update, costs, go }) {
         <Empty icon="🧈" title="Інгредієнтів поки немає">Додайте вручну або вставте чек у вкладці «AI-помічник».</Empty>
       ) : (
         <div className="table-wrap">
-          <table className="table">
+          <table className="table stack">
             <thead>
               <tr>
                 <th>Назва</th>
@@ -64,7 +59,7 @@ export default function Ingredients({ state, update, costs, go }) {
                 <th className="r">Ціна упаковки</th>
                 <th className="r">За кг / л / шт</th>
                 <th className="r">Техкарт</th>
-                <th>Оновлено</th>
+                <th className="r">Залишок</th>
               </tr>
             </thead>
             <tbody>
@@ -73,20 +68,20 @@ export default function Ingredients({ state, update, costs, go }) {
                 const u = UNITS[i.baseUnit] || UNITS.pcs;
                 return (
                   <tr key={i.id}>
-                    <td><button className="link" onClick={() => setEditId(i.id)}>{i.name}</button></td>
-                    <td><span className="tag">{i.category}</span></td>
-                    <td className="r">{fmtQty(i.packQty, i.baseUnit)}</td>
-                    <td className="r">
+                    <td data-label="Назва"><button className="link" onClick={() => setEditId(i.id)}>{i.name}</button></td>
+                    <td data-label="Категорія"><span className="tag">{i.category}</span></td>
+                    <td data-label="Упаковка" className="r nowrap">{fmtQty(i.packQty, i.baseUnit)}</td>
+                    <td data-label="Ціна упаковки" className="r">
                       <Num
-                        className="inline"
+                        className="price-in"
                         value={i.packPrice}
                         aria-label={`Ціна упаковки: ${i.name}`}
                         onCommit={(v) => update((d) => setIngredientPrice(d, i.id, { packPrice: v }))}
                       />
                     </td>
-                    <td className="r strong">{money(bigUnitPrice(i), cur)}<span className="muted"> /{u.big}</span></td>
-                    <td className="r">{uses || <span className="muted">—</span>}</td>
-                    <td className="muted small">{i.updatedAt ? fmtDate(i.updatedAt) : ''}</td>
+                    <td data-label="За кг / л / шт" className="r strong nowrap">{money(bigUnitPrice(i), cur)}<span className="muted"> /{u.big}</span></td>
+                    <td data-label="Техкарт" className="r">{uses || <span className="muted">—</span>}</td>
+                    <td data-label="Залишок" className={'r nowrap ' + ((stock.get(i.id) || 0) < (Number(i.minStock) || 0) || (stock.get(i.id) || 0) <= 0 ? 'neg' : '')}>{fmtQty(Math.round(stock.get(i.id) || 0), i.baseUnit)}</td>
                   </tr>
                 );
               })}
@@ -153,6 +148,7 @@ function IngredientModal({ id, state, update, costs, onClose }) {
           <div className="readout">{money(bigUnitPrice(ing), cur)} / {UNITS[ing.baseUnit]?.big}</div>
         </Field>
       </div>
+      <Field label={`Мінімальний залишок, ${UNITS[ing.baseUnit]?.label}`} hint="Нижче — інгредієнт потрапить у «Докупити»"><Num value={ing.minStock || 0} onChange={(v) => set({ minStock: Math.max(0, v) })} /></Field>
       <Field label="Примітка (постачальник, бренд…)"><input value={ing.note || ''} onChange={(e) => set({ note: e.target.value })} /></Field>
 
       <h4>Де використовується</h4>
