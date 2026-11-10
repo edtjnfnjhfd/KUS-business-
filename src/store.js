@@ -12,7 +12,7 @@ export const COLLECTIONS = [
   'customers', 'accounts', 'moneyMoves', 'shifts', 'employees',
 ];
 
-export const EXPENSE_CATEGORIES = ['Оренда', 'Реклама', 'Обладнання', 'Доставка', 'Комунальні', 'Зарплата', 'Податки', 'Банк / еквайринг', 'Інше'];
+export const EXPENSE_CATEGORIES = ['Оренда', 'Реклама', 'Обладнання', 'Транспорт', 'Комунальні', 'Зарплата', 'Податки', 'Банк / еквайринг', 'Інше'];
 export const INGREDIENT_CATEGORIES = ['Основа', 'Начинка', 'Декор', 'Пакування', 'Інше'];
 export const ROLES = {
   owner: 'Власник',
@@ -51,6 +51,7 @@ export function emptySettings() {
     city: 'Київ',
     targetMargin: 65,
     bonusPct: 0,
+    deliveryFee: 50,
     channels: ['Точка', 'Instagram', 'Telegram', 'Маркет', 'Доставка', 'Опт'],
     defaultChannel: 'Точка',
     requirePin: false,

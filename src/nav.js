@@ -15,6 +15,7 @@ import Analytics from './pages/Analytics.jsx';
 import Money from './pages/Money.jsx';
 import Expenses from './pages/Expenses.jsx';
 import Staff from './pages/Staff.jsx';
+import Transport from './pages/Transport.jsx';
 import Assistant from './pages/Assistant.jsx';
 import Settings from './pages/Settings.jsx';
 
@@ -22,6 +23,7 @@ export const NAV = [
   { group: 'Продажі', items: [
     { id: 'pos', icon: '🧾', label: 'Каса', perm: 'pos', C: POS },
     { id: 'orders', icon: '📦', label: 'Замовлення', short: 'Замовл.', perm: 'orders', C: Orders },
+    { id: 'transport', icon: '🚗', label: 'Транспорт', perm: 'transport', C: Transport },
     { id: 'sales', icon: '🧮', label: 'Чеки', perm: 'sales', C: Sales },
     { id: 'shifts', icon: '🕐', label: 'Касові зміни', perm: 'shifts', C: Shifts },
   ] },
@@ -57,8 +59,8 @@ export const ALL_PAGES = NAV.flatMap((g) => g.items);
 /** Права за роллю. costs — бачити собівартість і прибуток. */
 const ROLE_PERMS = {
   owner: '*',
-  manager: ['pos', 'orders', 'sales', 'shifts', 'plan', 'recipes', 'labels', 'stock', 'customers', 'finance', 'ai', 'costs', 'editSales'],
-  cashier: ['pos', 'orders', 'sales', 'shifts', 'plan', 'labels', 'customers'],
+  manager: ['pos', 'orders', 'transport', 'sales', 'shifts', 'plan', 'recipes', 'labels', 'stock', 'customers', 'finance', 'ai', 'costs', 'editSales'],
+  cashier: ['pos', 'orders', 'transport', 'sales', 'shifts', 'plan', 'labels', 'customers'],
   baker: ['plan', 'recipes', 'labels', 'stock'],
 };
 

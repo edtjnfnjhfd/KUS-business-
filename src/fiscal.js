@@ -40,6 +40,8 @@ export function receiptPayload(state, sale) {
   const order = orderReceipt({
     lines: sale.items.map((i) => ({ code: (i.recipeId || i.name).slice(0, 32), name: i.name, quantity: Math.abs(Number(i.qty)), total: kop(Math.abs(Number(i.qty) * Number(i.price))) })),
     discount: kop(Math.abs(t.discount)),
+    shipping: kop(t.delivery || 0),
+    shippingName: 'Доставка',
     discountName: sale.bonusUsed ? 'Знижка / бонуси' : 'Знижка',
   });
   return {

@@ -34,6 +34,7 @@ export function reportText(state, periodId, title, range = periodRange(periodId)
     `📦 Собівартість: ${money(r.cost, cur)}`,
     `📈 Валовий прибуток: <b>${money(r.profit, cur)}</b> (маржа ${pct(r.marginPct)})`,
   ];
+  if (r.delivery || r.transport) lines.push(`🚗 Доставка: зібрано ${money(r.delivery, cur)}, транспорт ${money(r.transport, cur)} → <b>${money(r.deliveryResult, cur)}</b>`);
   if (r.expenses) lines.push(`💸 Витрати: ${money(r.expenses, cur)}`);
   if (r.losses) lines.push(`🗑 Списання: ${money(r.losses, cur)}`);
   lines.push(`✅ Чистий прибуток: <b>${money(r.net, cur)}</b>`);

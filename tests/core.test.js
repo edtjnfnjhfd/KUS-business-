@@ -141,3 +141,25 @@ test('демо-дані валідні, етикетка без пакуванн
   assert.match(comp, /^Борошно/);
   assert.ok(!/Пакет|Наліпка/.test(comp));
 });
+
+test('доставка: окремий рядок чеку, транспорт у витратах, результат доставки', async () => {
+  const { buildSale } = await import('../src/checkout.js');
+  const { computeCosts, saleTotals } = await import('../src/calc.js');
+  const s = base();
+  s.settings.bonusPct = 10;
+  const sale = buildSale(s, computeCosts(s), { items: [{ recipeId: 'c', name: 'Cookie', qty: 2, price: 50 }], deliveryFee: 50, customerId: 'k', payment: 'cash' });
+  const t = saleTotals(sale);
+  assert.equal(t.revenue, 150);
+  assert.equal(t.goods, 100);
+  assert.equal(t.delivery, 50);
+  assert.equal(sale.bonusEarned, 10); // бонус лише з печива, не з доставки
+  s.sales = [sale];
+  s.expenses = [{ id: 'x', date: new Date().toISOString(), category: 'Транспорт', kind: 'Таксі', amount: 80 }];
+  const rep = buildReport(s, periodRange('today'));
+  assert.equal(rep.delivery, 50);
+  assert.equal(rep.deliveries, 1);
+  assert.equal(rep.transport, 80);
+  assert.equal(rep.deliveryResult, -30);
+  assert.equal(rep.products[0].revenue, 100); // виручка товару без доставки
+  assert.equal(rep.net, 150 - sale.items[0].cost * 2 - 80);
+});

@@ -18,6 +18,8 @@ export default function POS({ state, update, costs, go, can, user }) {
   const [channel, setChannel] = useState(state.settings.defaultChannel || '');
   const [note, setNote] = useState('');
   const [customDate, setCustomDate] = useState('');
+  const [deliv, setDeliv] = useState(false);
+  const [delivFee, setDelivFee] = useState(Number(state.settings.deliveryFee) || 0);
   const [cat, setCat] = useState('');
   const [q, setQ] = useState('');
   const [toast, showToast] = useToast();
@@ -72,16 +74,17 @@ export default function POS({ state, update, costs, go, can, user }) {
   const discAmount = Math.min(gross, discMode === 'pct' ? gross * (Number(discount) || 0) / 100 : Number(discount) || 0);
   const bonusAvail = maxBonus(state, customerId, gross - discAmount);
   const bonusUsed = useBonus ? bonusAvail : 0;
-  const draft = { items: cart.map((l) => ({ ...l, cost: costs.get(l.recipeId)?.perPiece || 0 })), discount: discAmount + bonusUsed };
+  const deliveryFee = deliv ? Math.max(0, Number(delivFee) || 0) : 0;
+  const draft = { items: cart.map((l) => ({ ...l, cost: costs.get(l.recipeId)?.perPiece || 0 })), discount: discAmount + bonusUsed, deliveryFee };
   const t = saleTotals(draft);
 
-  const reset = () => { setCart([]); setDiscount(0); setDiscMode('sum'); setNote(''); setCustomDate(''); setCustomerId(''); setUseBonus(false); setPayment('cash'); setChannel(state.settings.defaultChannel || ''); };
+  const reset = () => { setCart([]); setDiscount(0); setDiscMode('sum'); setNote(''); setCustomDate(''); setCustomerId(''); setUseBonus(false); setPayment('cash'); setDeliv(false); setDelivFee(Number(state.settings.deliveryFee) || 0); setChannel(state.settings.defaultChannel || ''); };
 
   const checkout = async () => {
     if (!cart.length) return;
     if (payment === DEBT && !customerId) { showToast('Для продажу в борг оберіть клієнта'); return; }
     const sale = buildSale(state, costs, {
-      items: cart, discount: discAmount, bonusUsed, payment, customerId, channel, note,
+      items: cart, discount: discAmount, bonusUsed, deliveryFee, payment, customerId, channel, note,
       date: customDate ? new Date(customDate).toISOString() : undefined, employeeId: user?.id,
     });
     const wantFiscal = cb.enabled && fiscalOn && payment !== DEBT;
@@ -109,7 +112,7 @@ export default function POS({ state, update, costs, go, can, user }) {
     update((d) => {
       d.orders.push({
         id: uid(), number, createdAt: new Date().toISOString(), dueAt: due.toISOString(), status: 'new',
-        customerId, channel, delivery: 'pickup', address: '', items: cart.map(({ recipeId, name, qty, price }) => ({ recipeId, name, qty, price })),
+        customerId, channel, delivery: deliv ? 'delivery' : 'pickup', deliveryFee: deliv ? deliveryFee : undefined, address: '', items: cart.map(({ recipeId, name, qty, price }) => ({ recipeId, name, qty, price })),
         discount: discAmount, prepaid: 0, prepaidAccount: '', note,
       });
     });
@@ -206,6 +209,13 @@ export default function POS({ state, update, costs, go, can, user }) {
                 <button className={'ig-btn' + (discMode === 'pct' ? ' on' : '')} onClick={() => setDiscMode('pct')}>%</button>
               </div>
             </div>
+            <div className="form-row">
+              <span className="form-label">Доставка</span>
+              <div className="row gap">
+                <label className="check no-m"><input type="checkbox" checked={deliv} onChange={(e) => setDeliv(e.target.checked)} /> 🚗</label>
+                {deliv && <div className="input-group grow"><Num value={delivFee} onChange={setDelivFee} aria-label="Вартість доставки" /><span className="ig-text">{cur}</span></div>}
+              </div>
+            </div>
             {bonusAvail > 0 && (
               <label className="check"><input type="checkbox" checked={useBonus} onChange={(e) => setUseBonus(e.target.checked)} /> Списати бонуси ({money(bonusAvail, cur)})</label>
             )}
@@ -234,6 +244,7 @@ export default function POS({ state, update, costs, go, can, user }) {
 
           <dl className="calc">
             {t.discount > 0 && <><dt className="muted">Знижка</dt><dd className="muted">−{money(t.discount, cur)}</dd></>}
+            {t.delivery > 0 && <><dt className="muted">Доставка</dt><dd className="muted">+{money(t.delivery, cur)}</dd></>}
             <dt className="total">До сплати</dt><dd className="total">{money(t.revenue, cur)}</dd>
             {can('costs') && <><dt className="muted">Прибуток</dt><dd className={t.profit < 0 ? 'neg' : 'pos'}>{money(t.profit, cur)}</dd></>}
             {customerId && Number(state.settings.bonusPct) > 0 && <><dt className="muted">Буде нараховано бонусів</dt><dd className="muted">{money(t.revenue * state.settings.bonusPct / 100, cur)}</dd></>}

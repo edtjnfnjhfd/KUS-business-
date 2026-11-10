@@ -10,7 +10,7 @@ export function priceFor(recipe, customer) {
 
 /**
  * @param {object} p
- *  items: [{recipeId, name, qty, price}], discount, bonusUsed, payment, customerId, channel, note, date, prepaid, orderId, employeeId, type
+ *  items: [{recipeId, name, qty, price}], discount, bonusUsed, deliveryFee, payment, customerId, channel, note, date, prepaid, orderId, employeeId, type
  */
 export function buildSale(state, costs, p) {
   const shift = state.shifts.find((s) => !s.closedAt);
@@ -29,6 +29,7 @@ export function buildSale(state, costs, p) {
     discount: round2((Number(p.discount) || 0) + bonusUsed),
     bonusUsed,
     prepaid: Number(p.prepaid) || 0,
+    deliveryFee: isReturn ? 0 : Math.max(0, Number(p.deliveryFee) || 0),
     payment: p.payment || 'cash',
     customerId: p.customerId || '',
     channel: p.channel || state.settings.defaultChannel || '',
@@ -40,7 +41,7 @@ export function buildSale(state, costs, p) {
     consumption: isReturn ? [] : consumptionFor(state, items),
   };
   const pctB = Number(state.settings.bonusPct) || 0;
-  sale.bonusEarned = sale.customerId && pctB > 0 && !isReturn ? round2(saleTotals(sale).revenue * pctB / 100) : 0;
+  sale.bonusEarned = sale.customerId && pctB > 0 && !isReturn ? round2(saleTotals(sale).goods * pctB / 100) : 0;
   if (isReturn && sale.customerId) {
     // повертаємо нараховані за повернений товар бонуси (від'ємне нарахування)
     sale.bonusEarned = pctB > 0 ? round2(saleTotals(sale).revenue * pctB / 100) : 0;

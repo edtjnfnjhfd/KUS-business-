@@ -85,6 +85,7 @@ function Accounting({ state, update }) {
         <Field label="Валюта"><input value={s.currency} onChange={(e) => set({ currency: e.target.value })} /></Field>
         <Field label="Місто (для пошуку цін)"><input value={s.city} onChange={(e) => set({ city: e.target.value })} /></Field>
         <Field label="Цільова маржа, %" hint="Для рекомендованої ціни в техкартах"><Num value={s.targetMargin} onChange={(v) => set({ targetMargin: v })} /></Field>
+        <Field label={`Доставка для клієнта, ${s.currency}`} hint="Підставляється в касі й замовленнях з доставкою (можна змінити в кожному)"><Num value={s.deliveryFee ?? 50} onChange={(v) => set({ deliveryFee: Math.max(0, v) })} /></Field>
         <Field label="Бонуси клієнтам, % кешбеку" hint="0 — вимкнено. Бонусами можна оплатити частину наступної покупки"><Num value={s.bonusPct} onChange={(v) => set({ bonusPct: Math.max(0, Math.min(50, v)) })} /></Field>
       </div>
       <h4>Рахунки</h4>

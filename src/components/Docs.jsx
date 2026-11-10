@@ -20,6 +20,7 @@ export function ReceiptDoc({ state, sale, width = 58 }) {
       ))}
       <hr />
       {t.discount !== 0 && <div className="rc-row"><span>Знижка</span><span>−{num(t.discount)}</span></div>}
+      {t.delivery > 0 && <div className="rc-row"><span>Доставка</span><span>{num(t.delivery)}</span></div>}
       {Number(sale.prepaid) > 0 && <div className="rc-row"><span>Передоплата</span><span>−{num(sale.prepaid)}</span></div>}
       <div className="rc-row big"><span>РАЗОМ</span><span>{money(t.revenue - (Number(sale.prepaid) || 0), cur)}</span></div>
       <div className="rc-row small"><span>Оплата</span><span>{paymentLabel(state, sale.payment)}</span></div>
@@ -56,6 +57,7 @@ export function InvoiceDoc({ state, sale }) {
       </table>
       <div className="doc-total">
         {t.discount !== 0 && <div>Знижка: {money(t.discount, cur)}</div>}
+        {t.delivery > 0 && <div>Доставка: {money(t.delivery, cur)}</div>}
         <div><b>Всього до сплати: {money(t.revenue, cur)}</b></div>
         <div className="small">Оплата: {paymentLabel(state, sale.payment)}</div>
       </div>

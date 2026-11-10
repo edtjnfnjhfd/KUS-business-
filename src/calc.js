@@ -140,13 +140,19 @@ export function usedIn(state, type, refId) {
 
 // ───────────────────────── Продажі та періоди ─────────────────────────
 
+/** Категорії витрат, які показуються в розділі «Транспорт» («Доставка» — стара назва). */
+export const TRANSPORT_CATEGORIES = ['Транспорт', 'Доставка'];
+export const TRANSPORT_KINDS = ['Таксі', 'Водій / кур’єр', 'Пальне', 'Нова пошта / пошта', 'Інше'];
+
 export function saleTotals(sale) {
   const gross = (sale.items || []).reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.price) || 0), 0);
   const cost = (sale.items || []).reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.cost) || 0), 0);
   const qty = (sale.items || []).reduce((s, i) => s + (Number(i.qty) || 0), 0);
   const discount = Math.min(Number(sale.discount) || 0, gross);
-  const revenue = gross - discount;
-  return { gross, discount, revenue, cost, profit: revenue - cost, qty };
+  // Доставка — окремий рядок чеку: клієнт платить, але це не виручка від печива
+  const delivery = Number(sale.deliveryFee) || 0;
+  const revenue = gross - discount + delivery;
+  return { gross, discount, delivery, goods: gross - discount, revenue, cost, profit: revenue - cost, qty };
 }
 
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -207,15 +213,16 @@ export function buildReport(state, range) {
   const sales = state.sales.filter((s) => inRange(s.date, range));
   const expenses = state.expenses.filter((e) => inRange(e.date, range));
 
-  const t = { revenue: 0, cost: 0, profit: 0, qty: 0, discount: 0, checks: sales.filter((x) => x.type !== 'return').length };
+  const t = { revenue: 0, cost: 0, profit: 0, qty: 0, discount: 0, delivery: 0, deliveries: 0, checks: sales.filter((x) => x.type !== 'return').length };
   const byProduct = new Map();
   const byPayment = new Map();
   for (const s of sales) {
     const st = saleTotals(s);
     t.revenue += st.revenue; t.cost += st.cost; t.profit += st.profit; t.qty += st.qty; t.discount += st.discount;
+    if (st.delivery) { t.delivery += st.delivery; t.deliveries += 1; }
     byPayment.set(s.payment || 'cash', (byPayment.get(s.payment || 'cash') || 0) + st.revenue);
     // знижку чеку розподіляємо пропорційно між позиціями
-    const k = st.gross > 0 ? st.revenue / st.gross : 0;
+    const k = st.gross > 0 ? st.goods / st.gross : 0;
     for (const i of s.items || []) {
       const key = i.recipeId || i.name;
       const p = byProduct.get(key) || { name: i.name, qty: 0, revenue: 0, cost: 0 };
@@ -231,6 +238,7 @@ export function buildReport(state, range) {
   // Виплати зарплати теж витрати
   for (const m of state.moneyMoves || []) if (m.type === 'salary' && inRange(m.date, range)) addCat('Зарплата', Math.abs(Number(m.amount) || 0));
   const expTotal = [...byExpCat.values()].reduce((a, b) => a + b, 0);
+  const transport = expenses.filter((e) => TRANSPORT_CATEGORIES.includes(e.category)).reduce((a, e) => a + (Number(e.amount) || 0), 0);
   // Списання і нестачі за інвентаризацією — втрати
   let losses = 0;
   for (const a of state.adjustments || []) if (inRange(a.date, range)) { const v = adjustmentValue(state, a); if (v < 0) losses -= v; }
@@ -271,6 +279,8 @@ export function buildReport(state, range) {
   return {
     ...t,
     expenses: expTotal,
+    transport,
+    deliveryResult: t.delivery - transport,
     losses,
     net: t.profit - expTotal - losses,
     avgCheck: t.checks ? t.revenue / t.checks : 0,
@@ -291,6 +301,13 @@ const numFmt = new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 2 });
 export const money = (n, cur = '₴') => `${moneyFmt.format(Number(n) || 0)} ${cur}`;
 export const num = (n) => numFmt.format(Number(n) || 0);
 export const pct = (n) => `${numFmt.format(Math.round((Number(n) || 0) * 10) / 10)}%`;
+
+/** Українські відмінки: plural(2, ['поїздка','поїздки','поїздок']) → «2 поїздки» */
+export function plural(n, [one, few, many]) {
+  const a = Math.abs(n) % 100; const b = a % 10;
+  const w = a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many;
+  return `${n} ${w}`;
+}
 
 export function fmtQty(qty, baseUnit) {
   const u = UNITS[baseUnit] || UNITS.pcs;
@@ -502,7 +519,7 @@ export function breakdowns(state, sales) {
     for (const b of [byWeekday[(d.getDay() + 6) % 7], byHour[d.getHours()]]) { b.revenue += t.revenue; b.profit += t.profit; b.qty += t.qty; }
     add(byChannel, s.channel || 'Без каналу', t);
     add(byEmployee, emp.get(s.employeeId) || 'Без входу за PIN', t);
-    const k = t.gross > 0 ? t.revenue / t.gross : 0;
+    const k = t.gross > 0 ? t.goods / t.gross : 0;
     for (const i of s.items || []) {
       const cat = recCat.get(i.recipeId) || 'Інше';
       const rev = (Number(i.qty) || 0) * (Number(i.price) || 0) * k;

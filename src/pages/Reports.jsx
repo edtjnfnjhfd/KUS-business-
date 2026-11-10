@@ -28,10 +28,11 @@ export default function Reports({ state }) {
       <PeriodPicker value={period} onChange={setPeriod} custom={custom} onCustom={setCustom} periods={PERIODS} />
 
       <div className="stats">
-        <Stat label="Виручка" value={money(rep.revenue, cur)} sub={<>{rep.checks} чеків <Delta cur={rep.revenue} prev={prev?.revenue} /></>} />
+        <Stat label="Виручка" value={money(rep.revenue, cur)} sub={<>{rep.checks} чеків{rep.delivery > 0 && <> · з них доставка {money(rep.delivery, cur)}</>} <Delta cur={rep.revenue} prev={prev?.revenue} /></>} />
         <Stat label="Собівартість проданого" value={money(rep.cost, cur)} sub="інгредієнти + пакування" />
         <Stat label="Валовий прибуток" value={money(rep.profit, cur)} sub={<>маржа {pct(rep.marginPct)} <Delta cur={rep.profit} prev={prev?.profit} /></>} />
         <Stat label="Витрати" value={money(rep.expenses, cur)} sub="оренда, реклама, зарплата…" />
+        {(rep.delivery > 0 || rep.transport > 0) && <Stat label="Доставка: результат" value={money(rep.deliveryResult, cur)} tone={rep.deliveryResult < 0 ? 'neg' : 'pos'} sub={`зібрано ${money(rep.delivery, cur)} − транспорт ${money(rep.transport, cur)}`} />}
         {rep.losses > 0 && <Stat label="Списання і нестачі" value={money(rep.losses, cur)} tone="neg" />}
         <Stat label="Чистий прибуток" value={money(rep.net, cur)} tone={rep.net < 0 ? 'neg' : 'pos'} sub={<>валовий − витрати − списання <Delta cur={rep.net} prev={prev?.net} /></>} />
         <Stat label="Продано" value={`${num(rep.qty)} шт`} sub={<>сер. чек {money(rep.avgCheck, cur)} <Delta cur={rep.avgCheck} prev={prev?.avgCheck} /></>} />

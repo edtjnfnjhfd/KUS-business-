@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { DEBT, ORDER_STATUSES, nextOrderNumber, paymentLabel } from '../store.js';
 import { dayKey, fmtDateTime, money, num, saleTotals, toLocalInput, uid } from '../calc.js';
 import { buildSale, priceFor } from '../checkout.js';
+import { TransportForm } from './Transport.jsx';
+import { TRANSPORT_CATEGORIES } from '../calc.js';
 import { Badge, CustomerPicker, Empty, Field, Modal, Num, PageHead, Seg, Toast, confirmDelete, useToast } from '../components/ui.jsx';
 
 const FILTERS = [
@@ -14,8 +16,9 @@ const FILTERS = [
 ];
 const FLOW = ['new', 'confirmed', 'baking', 'ready'];
 
+export const orderDelivery = (o) => (o.delivery === 'delivery' ? Number(o.deliveryFee) || 0 : 0);
 export function orderTotal(o) {
-  return saleTotals({ items: o.items, discount: o.discount }).revenue;
+  return saleTotals({ items: o.items, discount: o.discount, deliveryFee: orderDelivery(o) }).revenue;
 }
 
 export default function Orders({ state, update, costs, user }) {
@@ -23,6 +26,8 @@ export default function Orders({ state, update, costs, user }) {
   const [filter, setFilter] = useState('active');
   const [editId, setEditId] = useState(null);
   const [issueId, setIssueId] = useState(null);
+  const [tripId, setTripId] = useState(null);
+  const tripCost = (oid) => state.expenses.filter((e) => e.orderId === oid && TRANSPORT_CATEGORIES.includes(e.category)).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const [toast, showToast] = useToast();
   const now = new Date();
   const tKey = dayKey(now);
@@ -81,7 +86,7 @@ export default function Orders({ state, update, costs, user }) {
                   <div className="oc-cust">{c ? <><b>{c.name}</b> <span className="muted">{c.phone}</span></> : <span className="muted">Без клієнта</span>}</div>
                   <div className="oc-items">{o.items.length ? o.items.map((i) => `${i.name} × ${num(i.qty)}`).join(', ') : <span className="muted">Немає позицій</span>}</div>
                   <div className="oc-meta muted small">
-                    {o.delivery === 'delivery' ? `🚗 Доставка${o.address ? ': ' + o.address : ''}` : '🏠 Самовивіз'}{o.channel ? ` · ${o.channel}` : ''}{o.note ? ` · ${o.note}` : ''}
+                    {o.delivery === 'delivery' ? `🚗 Доставка ${money(orderDelivery(o), cur)}${o.address ? ' · ' + o.address : ''}${tripCost(o.id) ? ` · поїздка ${money(tripCost(o.id), cur)}` : ''}` : '🏠 Самовивіз'}{o.channel ? ` · ${o.channel}` : ''}{o.note ? ` · ${o.note}` : ''}
                   </div>
                 </div>
                 <div className="oc-foot">
@@ -90,6 +95,7 @@ export default function Orders({ state, update, costs, user }) {
                     {Number(o.prepaid) > 0 && <span className="muted small">передоплата {money(o.prepaid, cur)}</span>}
                   </div>
                   <div className="oc-actions">
+                    {o.delivery === 'delivery' && o.status !== 'cancelled' && <button className="btn small ghost" onClick={() => setTripId(o.id)} title="Записати витрату на таксі / водія">🚗 Поїздка</button>}
                     {nextSt && <button className="btn small ghost" onClick={() => setStatus(o.id, nextSt)}>→ {ORDER_STATUSES[nextSt].label}</button>}
                     {!['done', 'cancelled'].includes(o.status) && <button className="btn small primary" onClick={() => setIssueId(o.id)} disabled={!o.items.length}>Видати</button>}
                     {!['done', 'cancelled'].includes(o.status) && <button className="btn small ghost danger" onClick={() => cancel(o)}>Скасувати</button>}
@@ -102,6 +108,11 @@ export default function Orders({ state, update, costs, user }) {
       )}
       {editId && <OrderModal id={editId} state={state} update={update} onClose={() => setEditId(null)} />}
       {issueId && <IssueModal id={issueId} state={state} update={update} costs={costs} user={user} onDone={(m) => { setIssueId(null); showToast(m); }} onClose={() => setIssueId(null)} />}
+      {tripId && (
+        <Modal title={`Поїздка до замовлення №${state.orders.find((o) => o.id === tripId)?.number}`} onClose={() => setTripId(null)}>
+          <TransportForm state={state} update={update} orderId={tripId} compact onDone={(m) => { setTripId(null); showToast(m); }} />
+        </Modal>
+      )}
       <Toast text={toast} />
     </section>
   );
@@ -143,7 +154,7 @@ function OrderModal({ id, state, update, onClose }) {
         </Field>
         <Field label="Дата й час видачі"><input type="datetime-local" value={toLocalInput(o.dueAt)} onChange={(e) => e.target.value && set((x) => { x.dueAt = new Date(e.target.value).toISOString(); })} /></Field>
         <Field label="Отримання">
-          <select value={o.delivery} onChange={(e) => set((x) => { x.delivery = e.target.value; })}>
+          <select value={o.delivery} onChange={(e) => set((x) => { x.delivery = e.target.value; if (e.target.value === 'delivery' && x.deliveryFee == null) x.deliveryFee = Number(state.settings.deliveryFee) || 0; })}>
             <option value="pickup">Самовивіз</option>
             <option value="delivery">Доставка</option>
           </select>
@@ -154,7 +165,8 @@ function OrderModal({ id, state, update, onClose }) {
             {state.settings.channels.map((c) => <option key={c}>{c}</option>)}
           </select>
         </Field>
-        {o.delivery === 'delivery' && <Field label="Адреса доставки" className="span2"><input value={o.address || ''} onChange={(e) => set((x) => { x.address = e.target.value; })} /></Field>}
+        {o.delivery === 'delivery' && <Field label="Адреса доставки"><input value={o.address || ''} onChange={(e) => set((x) => { x.address = e.target.value; })} /></Field>}
+        {o.delivery === 'delivery' && <Field label={`Доставка для клієнта, ${cur}`} hint="0 — безкоштовна доставка"><Num value={o.deliveryFee ?? (Number(state.settings.deliveryFee) || 0)} onChange={(v) => set((x) => { x.deliveryFee = Math.max(0, v); })} /></Field>}
         <Field label="Статус">
           <select value={o.status} onChange={(e) => set((x) => { x.status = e.target.value; })} disabled={locked}>
             {Object.entries(ORDER_STATUSES).filter(([k]) => k !== 'done' || locked).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -204,7 +216,7 @@ function IssueModal({ id, state, update, costs, user, onClose, onDone }) {
   const rest = total - (Number(o.prepaid) || 0);
   const issue = () => {
     const sale = buildSale(state, costs, {
-      items: o.items, discount: o.discount, payment, customerId: o.customerId, channel: o.channel,
+      items: o.items, discount: o.discount, deliveryFee: orderDelivery(o), payment, customerId: o.customerId, channel: o.channel,
       note: `Замовлення №${o.number}${o.note ? ': ' + o.note : ''}`, prepaid: o.prepaid, orderId: o.id, employeeId: user?.id,
     });
     update((d) => {
@@ -218,7 +230,7 @@ function IssueModal({ id, state, update, costs, user, onClose, onDone }) {
   return (
     <Modal title={`Видати замовлення №${o.number}`} onClose={onClose}
       footer={<><button className="btn ghost" onClick={onClose}>Скасувати</button><span className="grow" /><button className="btn primary" onClick={issue}>Видати і записати продаж</button></>}>
-      <p>Сума замовлення: <b>{money(total, cur)}</b>{Number(o.prepaid) > 0 && <> · передоплата {money(o.prepaid, cur)} ({paymentLabel(state, o.prepaidAccount)})</>}</p>
+      <p>Сума замовлення: <b>{money(total, cur)}</b>{orderDelivery(o) > 0 && <> (з них доставка {money(orderDelivery(o), cur)})</>}{Number(o.prepaid) > 0 && <> · передоплата {money(o.prepaid, cur)} ({paymentLabel(state, o.prepaidAccount)})</>}</p>
       <p>Доплата при видачі: <b className="big-num">{money(rest, cur)}</b></p>
       {rest > 0 && (
         <Field label="Як оплачує доплату">
