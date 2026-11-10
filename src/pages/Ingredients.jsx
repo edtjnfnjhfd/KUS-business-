@@ -95,7 +95,7 @@ export default function Ingredients({ state, update, costs, go }) {
   );
 }
 
-function IngredientModal({ id, state, update, costs, onClose }) {
+export function IngredientModal({ id, state, update, costs, onClose }) {
   const ing = state.ingredients.find((i) => i.id === id);
   const [packUnit, setPackUnit] = useState(() => (ing ? packInputUnit(ing) : 'g'));
   if (!ing) return null;

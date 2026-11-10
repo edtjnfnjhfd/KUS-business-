@@ -90,7 +90,8 @@ export function demoState() {
   const box1 = ing('Пакет крафт з вікном', 'Пакування', 'pcs', 100, 350, 50);
   const box4 = ing('Коробка на 4 печива', 'Пакування', 'pcs', 50, 900, 10);
   const sticker = ing('Наліпка з логотипом', 'Пакування', 'pcs', 500, 600, 50);
-  s.ingredients = [flour, butter, brown, sugar, eggs, soda, salt, vanilla, choc, milkChoc, nuts, cocoa, box1, box4, sticker];
+  const cream = ing('Вершки 33%', 'Основа', 'ml', 500, 98, 500);
+  s.ingredients = [flour, butter, brown, sugar, eggs, soda, salt, vanilla, choc, milkChoc, nuts, cocoa, box1, box4, sticker, cream];
 
   const line = (i, qty, perPiece = false) => ({ id: uid(), type: 'ing', refId: i.id, qty, perPiece });
   const label = { allergens: 'Глютен, яйця, молоко. Може містити сліди горіхів.', shelfLifeDays: 7, storage: 'Зберігати при t° від +5 до +25 °C' };
@@ -120,7 +121,15 @@ export function demoState() {
     ],
     extras: [],
   };
-  s.recipes = [classic, double, pecan, box];
+  // Напівфабрикат власного виробництва: вихід у грамах, додається в інші техкарти
+  const caramel = {
+    id: uid(), name: 'Солона карамель', category: 'Напівфабрикати', emoji: '🍯', yieldQty: 400, yieldUnit: 'g', salePrice: 0, wholesalePrice: 0, wastePct: 5, active: false,
+    note: 'Цукор розтопити до бурштину, влити гарячі вершки, додати масло і сіль. Охолодити.', allergens: 'Молоко',
+    items: [line(sugar, 200), line(cream, 150), line(butter, 60), line(salt, 3)], extras: [],
+  };
+  pecan.name = 'Pecan Salted Caramel';
+  pecan.items.push({ id: uid(), type: 'rec', refId: caramel.id, qty: 120, perPiece: false });
+  s.recipes = [classic, double, pecan, box, caramel];
 
   // Стартові залишки, щоб склад не був порожнім
   s.supplies = [{

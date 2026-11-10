@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { bakePlan, computeStock, dayKey, fmtDate, fmtQty, money, num } from '../calc.js';
+import { bakePlan, computeStock, dayKey, fmtDate, fmtQty, money, num, yieldUnitLabel } from '../calc.js';
 import { Empty, Num, PageHead, Toast, useToast } from '../components/ui.jsx';
 import { printDoc } from '../components/Print.jsx';
 
@@ -42,8 +42,8 @@ export default function Plan({ state, update, can }) {
   const printPlan = () => printDoc(
     <div className="doc-invoice">
       <h2>План випічки на {fmtDate(date + 'T12:00')}</h2>
-      <table className="doc-table"><thead><tr><th>Техкарта</th><th>Потрібно, шт</th><th>Замісів</th><th>Вийде, шт</th></tr></thead>
-        <tbody>{plan.rows.map((r) => <tr key={r.recipe.id}><td>{r.recipe.name}</td><td className="r">{num(r.pieces)}</td><td className="r">{r.batches || '—'}</td><td className="r">{num(r.make)}</td></tr>)}</tbody></table>
+      <table className="doc-table"><thead><tr><th>Техкарта</th><th>Потрібно</th><th>Замісів</th><th>Вийде, шт</th></tr></thead>
+        <tbody>{plan.rows.map((r) => <tr key={r.recipe.id}><td>{r.recipe.name}</td><td className="r">{num(Math.round(r.pieces))} {yieldUnitLabel(r.recipe)}</td><td className="r">{r.batches || '—'}</td><td className="r">{num(r.make)} {yieldUnitLabel(r.recipe)}</td></tr>)}</tbody></table>
       <h3>Інгредієнти</h3>
       <table className="doc-table"><thead><tr><th>Інгредієнт</th><th>Потрібно</th><th>На складі</th><th>Докупити</th></tr></thead>
         <tbody>{plan.ingredients.map((x) => <tr key={x.ing.id}><td>{x.ing.name}</td><td className="r">{fmtQty(x.qty, x.ing.baseUnit)}</td><td className="r">{fmtQty(Math.max(0, x.have), x.ing.baseUnit)}</td><td className="r">{x.short > 0 ? fmtQty(x.short, x.ing.baseUnit) : '—'}</td></tr>)}</tbody></table>
@@ -81,14 +81,14 @@ export default function Plan({ state, update, can }) {
             <h3>Що пекти</h3>
             <div className="table-wrap">
               <table className="table compact">
-                <thead><tr><th>Техкарта</th><th className="r">Треба, шт</th><th className="r">Замісів</th><th className="r">Вийде</th></tr></thead>
+                <thead><tr><th>Техкарта</th><th className="r">Треба</th><th className="r">Замісів</th><th className="r">Вийде</th></tr></thead>
                 <tbody>
                   {plan.rows.map((r) => (
                     <tr key={r.recipe.id}>
                       <td>{r.recipe.emoji} {r.recipe.name}</td>
-                      <td className="r">{num(Math.round(r.pieces * 100) / 100)}</td>
+                      <td className="r nowrap">{num(Math.round(r.pieces * 100) / 100)} {yieldUnitLabel(r.recipe)}</td>
                       <td className="r strong">{r.batches || '—'}</td>
-                      <td className="r">{num(r.make)}{r.spare > 0.01 && <div className="muted small">+{num(Math.round(r.spare))} зайвих</div>}</td>
+                      <td className="r nowrap">{num(r.make)} {yieldUnitLabel(r.recipe)}{r.spare > 0.01 && <div className="muted small">+{num(Math.round(r.spare))} про запас</div>}</td>
                     </tr>
                   ))}
                 </tbody>

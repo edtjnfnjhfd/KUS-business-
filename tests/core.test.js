@@ -163,3 +163,42 @@ test('доставка: окремий рядок чеку, транспорт �
   assert.equal(rep.products[0].revenue, 100); // виручка товару без доставки
   assert.equal(rep.net, 150 - sale.items[0].cost * 2 - 80);
 });
+
+test('напівфабрикат у грамах (солона карамель) усередині техкарти печива', async () => {
+  const { computeCosts } = await import('../src/calc.js');
+  const s = emptyState();
+  s.ingredients = [
+    { id: 'sugar', name: 'Цукор', category: 'Основа', baseUnit: 'g', packQty: 1000, packPrice: 40 },
+    { id: 'cream', name: 'Вершки', category: 'Основа', baseUnit: 'ml', packQty: 500, packPrice: 100 },
+    { id: 'flour', name: 'Борошно', category: 'Основа', baseUnit: 'g', packQty: 1000, packPrice: 30 },
+  ];
+  s.recipes = [
+    { id: 'car', name: 'Карамель', yieldQty: 400, yieldUnit: 'g', wastePct: 0, items: [
+      { id: 'a', type: 'ing', refId: 'sugar', qty: 200 }, // 8 ₴
+      { id: 'b', type: 'ing', refId: 'cream', qty: 160 }, // 32 ₴ → 40 ₴ / 400 г = 0.1 ₴/г
+    ], extras: [] },
+    { id: 'ck', name: 'Cookie', yieldQty: 10, wastePct: 0, items: [
+      { id: 'c', type: 'ing', refId: 'flour', qty: 500 }, // 15 ₴
+      { id: 'd', type: 'rec', refId: 'car', qty: 100 }, // 100 г × 0.1 = 10 ₴
+    ], extras: [] },
+  ];
+  const costs = computeCosts(s);
+  assert.equal(Math.round(costs.get('car').perPiece * 1000) / 1000, 0.1);
+  assert.equal(Math.round(costs.get('ck').batch * 100) / 100, 25);
+  assert.equal(costs.get('ck').lines[1].unitLabel, 'г');
+  assert.equal(costs.get('ck').doughG, 600); // 500 г борошна + 100 г карамелі
+  // 10 печив → 100 г карамелі → 50 г цукру + 40 мл вершків
+  const m = explode(s, 'ck', 10);
+  assert.equal(Math.round(m.get('sugar')), 50);
+  assert.equal(Math.round(m.get('cream')), 40);
+  // план: 25 печив → 3 цілі заміси (30 шт) → карамелі треба 300 г → 1 заміс (400 г)
+  const plan = bakePlan(s, new Map([['ck', 25]]));
+  const car = plan.rows.find((r) => r.recipe.id === 'car');
+  assert.equal(Math.round(car.pieces), 300);
+  assert.equal(car.batches, 1);
+  const plan2 = bakePlan(s, new Map([['ck', 45]])); // 5 замісів → 500 г карамелі → 2 заміси
+  assert.equal(plan2.rows.find((r) => r.recipe.id === 'car').batches, 2);
+  // зміна ціни цукру → перераховується і карамель, і печиво
+  s.ingredients[0].packPrice = 80;
+  assert.equal(Math.round(computeCosts(s).get('ck').batch * 100) / 100, 27); // карамель 48 ₴/400 г → 12 ₴ + борошно 15 ₴
+});

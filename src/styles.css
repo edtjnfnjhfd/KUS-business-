@@ -415,7 +415,12 @@ input.price-in { width: 96px; }
 .ig-row:last-child { border-bottom: 0; }
 .ig-row.missing { background: var(--err-bg); }
 .ig-head { font-size: 12px; text-transform: uppercase; color: var(--muted); font-weight: 600; letter-spacing: 0.03em; }
+.ig-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ig-name select { width: 100%; }
+.ig-sub { display: flex; flex-wrap: wrap; gap: 2px var(--s3); font-size: 12px; color: var(--muted); padding-left: 2px; }
+.ig-sub .link { font-size: 12px; font-weight: 600; }
+.invisible { visibility: hidden; }
+.used-in { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: var(--s3); }
 .ig-pp { display: flex; justify-content: center; align-items: center; gap: 6px; }
 .ig-act { display: flex; justify-content: flex-end; }
 @media (max-width: 1299px) and (min-width: 1100px), (max-width: 799px) {

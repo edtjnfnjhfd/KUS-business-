@@ -28,6 +28,12 @@ export function uid() {
   return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
 }
 
+/** Одиниця виходу техкарти: шт (печиво, набір) або г / мл (напівфабрикат: карамель, крем). */
+export function yieldUnitLabel(recipe) {
+  return (UNITS[recipe?.yieldUnit] || UNITS.pcs).label;
+}
+export const isSemi = (recipe) => !!recipe && recipe.yieldUnit && recipe.yieldUnit !== 'pcs';
+
 /** Ціна за 1 базову одиницю (1 г / 1 мл / 1 шт). */
 export function unitPrice(ing) {
   if (!ing) return 0;
@@ -76,6 +82,7 @@ export function computeCosts(state) {
         if (sub.error === 'cycle') error = 'cycle';
         unitCost = sub.perPiece;
         name = subR ? subR.name : '(видалена техкарта)';
+        unitLabel = yieldUnitLabel(subR);
       } else {
         const ing = ingById.get(it.refId);
         if (!ing) missing = true;
@@ -102,6 +109,9 @@ export function computeCosts(state) {
       if (it.type === 'ing' && !it.perPiece) {
         const ing = ingById.get(it.refId);
         if (ing?.baseUnit === 'g') doughG += Number(it.qty) || 0;
+      } else if (it.type === 'rec' && !it.perPiece) {
+        // напівфабрикат у грамах (карамель, крем) — теж іде у вагу тіста
+        if (recById.get(it.refId)?.yieldUnit === 'g') doughG += Number(it.qty) || 0;
       }
     }
 
@@ -552,19 +562,41 @@ export function delta(cur, prev) {
  * need: Map<recipeId, штук> (з замовлень + вручну)
  */
 export function bakePlan(state, need, stock = computeStock(state)) {
-  // Розкладаємо набори на печиво: «виробляємо» лише техкарти з інгредієнтами
-  const pieces = new Map();
-  const walk = (rid, n, stack = new Set()) => {
-    const r = state.recipes.find((x) => x.id === rid);
-    if (!r || stack.has(rid) || n <= 0) return;
+  // Порядок «батьки раніше за дітей» (набір → печиво → карамель), щоб вкладені техкарти
+  // рахувалися від того, скільки реально вийде з цілих замісів батьківської техкарти.
+  const byId = new Map(state.recipes.map((r) => [r.id, r]));
+  const order = [];
+  const seen = new Set();
+  const visit = (rid, stack = new Set()) => {
+    const r = byId.get(rid);
+    if (!r || seen.has(rid) || stack.has(rid)) return;
     stack.add(rid);
+    for (const it of r.items || []) if (it.type === 'rec') visit(it.refId, stack);
+    stack.delete(rid);
+    seen.add(rid);
+    order.push(rid);
+  };
+  for (const rid of need.keys()) visit(rid);
+  order.reverse();
+
+  const demand = new Map(need);
+  const pieces = new Map(); // що реально «виробляємо» (техкарти з власним замісом)
+  for (const rid of order) {
+    const n = demand.get(rid) || 0;
+    if (n <= 0) continue;
+    const r = byId.get(rid);
     const y = Math.max(Number(r.yieldQty) || 0, 0) || 1;
     const hasIng = (r.items || []).some((i) => i.type === 'ing' && !i.perPiece);
-    if (hasIng || !(r.items || []).some((i) => i.type === 'rec')) pieces.set(rid, (pieces.get(rid) || 0) + n);
-    for (const it of r.items || []) if (it.type === 'rec') walk(it.refId, n * (Number(it.qty) || 0) * (it.perPiece ? 1 : 1 / y), stack);
-    stack.delete(rid);
-  };
-  for (const [rid, n] of need) walk(rid, n);
+    const produced = hasIng || !(r.items || []).some((i) => i.type === 'rec');
+    if (produced) pieces.set(rid, n);
+    // скільки реально вийде: цілі заміси для техкарт із замісом, інакше рівно стільки, скільки треба
+    const made = hasIng ? Math.ceil(n / y - 1e-9) * y : n;
+    for (const it of r.items || []) {
+      if (it.type !== 'rec') continue;
+      const q = made * (Number(it.qty) || 0) * (it.perPiece ? 1 : 1 / y);
+      demand.set(it.refId, (demand.get(it.refId) || 0) + q);
+    }
+  }
 
   const rows = [];
   const ingNeed = new Map();
