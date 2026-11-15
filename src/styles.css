@@ -542,6 +542,20 @@ mark.ph { white-space: nowrap; background: var(--warn-bg); color: var(--warn); b
 .chip-count { font-size: 12px; opacity: 0.6; }
 .folder-bar { margin: calc(-1 * var(--s1)) 0 var(--s3); }
 .script-edit { font-size: 14px; line-height: 1.5; }
+.subfolder { max-width: 820px; margin-bottom: var(--s3); border: 1px dashed var(--line); border-radius: var(--r-lg); background: var(--surface); }
+.subfolder > summary { display: flex; align-items: center; gap: var(--s2); padding: var(--s3) var(--s4); cursor: pointer; font-weight: 600; list-style: none; }
+.subfolder > summary::-webkit-details-marker { display: none; }
+.subfolder > summary::before { content: '▸'; color: var(--muted); transition: transform 0.15s; }
+.subfolder[open] > summary::before { transform: rotate(90deg); }
+.subfolder > summary .link { margin-left: auto; }
+.subfolder > .script-list { padding: 0 var(--s3) var(--s3); }
+.script-card.note { background: color-mix(in srgb, var(--surface-2) 45%, var(--surface)); }
+.note-text { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.note-text h4 { margin: var(--s3) 0 var(--s1); color: var(--text); font-size: 14px; }
+.note-text h4:first-child { margin-top: 0; }
+.note-text ul { margin: 0 0 var(--s2); padding-left: 20px; }
+.note-text li { margin-bottom: 2px; }
+.note-text p { margin: 0 0 var(--s2); }
 
 /* Персонал */
 .emp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--s3); margin-bottom: var(--s4); }

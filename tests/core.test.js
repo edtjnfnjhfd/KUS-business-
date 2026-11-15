@@ -204,17 +204,33 @@ test('напівфабрикат у грамах (солона карамель)
 });
 
 test('скрипти: стартові додаються один раз, видалений не повертається, синхронізуються', async () => {
-  const { SEED_SCRIPTS } = await import('../src/scriptSeeds.js');
+  const { SEED_SCRIPTS, CAFE_SCRIPTS, SEED_FOLDERS } = await import('../src/scriptSeeds.js');
+  const total = SEED_SCRIPTS.length + CAFE_SCRIPTS.length;
   const s = normalize({});
-  assert.equal(s.scripts.length, SEED_SCRIPTS.length);
-  assert.equal(s.scriptFolders.length, 3);
-  assert.equal(normalize(s).scripts.length, SEED_SCRIPTS.length); // без дублів
-  // старі дані без скриптів отримують стартові
-  assert.equal(normalize({ settings: {}, sales: [] }).scripts.length, SEED_SCRIPTS.length);
-  // видалений стартовий скрипт не з'являється знову, змінений не перезаписується
+  assert.equal(s.scripts.length, total);
+  assert.equal(s.scriptFolders.length, SEED_FOLDERS.length);
+  assert.equal(s.scriptFolders.find((f) => f.id === 'sf-cafes-guide').parentId, 'sf-cafes');
+  assert.equal(normalize(s).scripts.length, total); // без дублів
+  assert.equal(normalize({ settings: {}, sales: [] }).scripts.length, total);
   const a = stamp(s, produce(s, (d) => { d.scripts.splice(0, 1); d.scripts[0].text = 'мій текст'; }), 5000);
   const b = normalize(a);
-  assert.equal(b.scripts.length, SEED_SCRIPTS.length - 1);
+  assert.equal(b.scripts.length, total - 1);
   assert.equal(b.scripts[0].text, 'мій текст');
   assert.ok(COLLECTIONS.includes('scripts'));
+  // зберігання: ніде не лишилось «при кімнатній температурі» для Classic/Double
+  for (const sc of [...SEED_SCRIPTS, ...CAFE_SCRIPTS]) assert.ok(!/кімнатній/.test(sc.text), sc.id);
+});
+
+test('скрипти: невідредагований старий текст оновлюється, відредагований — ні', () => {
+  const oldText = `Вітаю! Як вам печиво? 🙂 Будемо дуже вдячні за кілька слів — для нас це важливо.
+
+Невелика порада, як зберігати:
+• печиво з кремом — у холодильнику, до 4 днів
+• Classic і Double Chocolate — у закритій коробці при кімнатній температурі, до 7 днів (і їх можна підігріти 10 секунд у мікрохвильовці — будуть як щойно з печі)
+
+І бонус: викладіть сторіз з нашим печивом і відмітьте @<нік> — отримаєте −15% на наступне замовлення 🍪`;
+  const s1 = normalize({ scripts: [{ id: 'ss-client-9', folderId: 'sf-clients', title: '6', text: oldText }] });
+  assert.match(s1.scripts.find((x) => x.id === 'ss-client-9').text, /у холодильнику, до 7 днів/);
+  const s2 = normalize({ scripts: [{ id: 'ss-client-9', folderId: 'sf-clients', title: '6', text: oldText + ' (моє)' }] });
+  assert.match(s2.scripts.find((x) => x.id === 'ss-client-9').text, /\(моє\)$/);
 });
