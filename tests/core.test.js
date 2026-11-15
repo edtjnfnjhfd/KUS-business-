@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { produce } from 'immer';
 import { explode, consumptionFor, computeStock, bakePlan, accountBalances, customerStats, abc, shiftCash, payroll, periodRange, buildReport, labelComposition } from '../src/calc.js';
-import { emptyState, demoState, stamp, mergeStates, normalize } from '../src/store.js';
+import { emptyState, demoState, stamp, mergeStates, normalize, COLLECTIONS } from '../src/store.js';
 
 function base() {
   const s = emptyState();
@@ -201,4 +201,20 @@ test('напівфабрикат у грамах (солона карамель)
   // зміна ціни цукру → перераховується і карамель, і печиво
   s.ingredients[0].packPrice = 80;
   assert.equal(Math.round(computeCosts(s).get('ck').batch * 100) / 100, 27); // карамель 48 ₴/400 г → 12 ₴ + борошно 15 ₴
+});
+
+test('скрипти: стартові додаються один раз, видалений не повертається, синхронізуються', async () => {
+  const { SEED_SCRIPTS } = await import('../src/scriptSeeds.js');
+  const s = normalize({});
+  assert.equal(s.scripts.length, SEED_SCRIPTS.length);
+  assert.equal(s.scriptFolders.length, 3);
+  assert.equal(normalize(s).scripts.length, SEED_SCRIPTS.length); // без дублів
+  // старі дані без скриптів отримують стартові
+  assert.equal(normalize({ settings: {}, sales: [] }).scripts.length, SEED_SCRIPTS.length);
+  // видалений стартовий скрипт не з'являється знову, змінений не перезаписується
+  const a = stamp(s, produce(s, (d) => { d.scripts.splice(0, 1); d.scripts[0].text = 'мій текст'; }), 5000);
+  const b = normalize(a);
+  assert.equal(b.scripts.length, SEED_SCRIPTS.length - 1);
+  assert.equal(b.scripts[0].text, 'мій текст');
+  assert.ok(COLLECTIONS.includes('scripts'));
 });

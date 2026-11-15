@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { produce } from 'immer';
 import { uid } from './calc.js';
+import { addMissingSeeds } from './scriptSeeds.js';
 
 const KEY = 'kus-cookie-manager-v1';
 const LOCAL_KEY = 'kus-local-v1';
@@ -9,7 +10,7 @@ export const SCHEMA_VERSION = 2;
 /** Колекції записів (кожен запис має id і _u — час останньої зміни). */
 export const COLLECTIONS = [
   'ingredients', 'recipes', 'sales', 'expenses', 'supplies', 'adjustments', 'orders',
-  'customers', 'accounts', 'moneyMoves', 'shifts', 'employees',
+  'customers', 'accounts', 'moneyMoves', 'shifts', 'employees', 'scriptFolders', 'scripts',
 ];
 
 export const EXPENSE_CATEGORIES = ['Оренда', 'Реклама', 'Обладнання', 'Транспорт', 'Комунальні', 'Зарплата', 'Податки', 'Банк / еквайринг', 'Інше'];
@@ -65,7 +66,7 @@ export function emptyState() {
   const s = { version: SCHEMA_VERSION, settings: emptySettings(), deleted: {} };
   for (const c of COLLECTIONS) s[c] = [];
   s.accounts = DEFAULT_ACCOUNTS.map((a) => ({ ...a }));
-  return s;
+  return addMissingSeeds(s);
 }
 
 function ing(name, category, baseUnit, packQty, packPrice, minStock = 0) {
@@ -158,6 +159,7 @@ export function normalize(raw) {
   s.ingredients = s.ingredients.map((i) => ({ history: [], category: 'Інше', baseUnit: 'g', packQty: 1000, packPrice: 0, minStock: 0, ...i, id: i.id || uid() }));
   s.recipes = s.recipes.map((r) => ({ items: [], extras: [], yieldQty: 1, salePrice: 0, wholesalePrice: 0, wastePct: 0, active: true, emoji: '🍪', category: 'Печиво', allergens: '', shelfLifeDays: 0, storage: '', ...r, id: r.id || uid() }));
   s.sales = s.sales.map((x) => ({ type: 'sale', discount: 0, prepaid: 0, bonusUsed: 0, bonusEarned: 0, consumption: [], ...x }));
+  addMissingSeeds(s);
   s.version = SCHEMA_VERSION;
   return s;
 }

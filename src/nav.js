@@ -16,6 +16,7 @@ import Money from './pages/Money.jsx';
 import Expenses from './pages/Expenses.jsx';
 import Staff from './pages/Staff.jsx';
 import Transport from './pages/Transport.jsx';
+import Scripts from './pages/Scripts.jsx';
 import Assistant from './pages/Assistant.jsx';
 import Settings from './pages/Settings.jsx';
 
@@ -23,6 +24,7 @@ export const NAV = [
   { group: 'Продажі', items: [
     { id: 'pos', icon: '🧾', label: 'Каса', perm: 'pos', C: POS },
     { id: 'orders', icon: '📦', label: 'Замовлення', short: 'Замовл.', perm: 'orders', C: Orders },
+    { id: 'scripts', icon: '💬', label: 'Скрипти', perm: 'pos', C: Scripts },
     { id: 'transport', icon: '🚗', label: 'Транспорт', perm: 'transport', C: Transport },
     { id: 'sales', icon: '🧮', label: 'Чеки', perm: 'sales', C: Sales },
     { id: 'shifts', icon: '🕐', label: 'Касові зміни', perm: 'shifts', C: Shifts },
