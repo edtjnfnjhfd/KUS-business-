@@ -271,6 +271,14 @@ export function useStore() {
     setState((prev) => stamp(prev, normalize({ ...s, deleted: { ...(prev.deleted || {}), ...(s.deleted || {}) } })));
   }, []);
 
+  /**
+   * Повністю взяти дані з хмари (новий пристрій): локальні записи просто відкидаються,
+   * БЕЗ позначки «видалено» — тож на інших пристроях нічого не зникне.
+   */
+  const adopt = useCallback((remote) => {
+    setState((prev) => normalize({ ...remote, settings: remote.settings || prev.settings, deleted: { ...(remote.deleted || {}) } }));
+  }, []);
+
   /** Злиття з даними з хмари (без позначення як локальні зміни). */
   const mergeRemote = useCallback((remote) => {
     setState((prev) => mergeStates(prev, remote));
@@ -289,7 +297,7 @@ export function useStore() {
     return () => listeners.current.delete(fn);
   }, []);
 
-  return { state, update, replace, mergeRemote, local, setLocal, saveError, subscribe };
+  return { state, update, replace, mergeRemote, adopt, local, setLocal, saveError, subscribe };
 }
 
 /** Змінює ціну інгредієнта і записує попередню в історію. */

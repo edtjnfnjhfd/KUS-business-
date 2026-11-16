@@ -75,8 +75,33 @@ export function markSynced(meta, rows) {
   }
 }
 
+/** Чи є на пристрої власні робочі дані (а не лише стартові налаштування й скрипти). */
+export function hasBusinessData(state) {
+  return ['ingredients', 'recipes', 'sales', 'expenses', 'supplies', 'orders', 'customers', 'moneyMoves', 'adjustments', 'shifts']
+    .some((c) => (state[c] || []).length > 0);
+}
+
+/** Посилання, яке підключає інший пристрій до тієї ж бази (адреса + публічний ключ, без пароля). */
+export function makeConnectLink(cfg, base = `${window.location.origin}${window.location.pathname}`) {
+  const code = btoa(JSON.stringify({ u: cfg.url.trim(), k: cfg.key.trim() })).replace(/=+$/, '');
+  return `${base}#connect=${code}`;
+}
+
+/** Розбирає «#connect=…» з адреси. Повертає {url, key} або null. */
+export function parseConnectHash(hash) {
+  const m = /connect=([A-Za-z0-9+/_-]+)/.exec(hash || '');
+  if (!m) return null;
+  try {
+    const raw = m[1].replace(/-/g, '+').replace(/_/g, '/');
+    const j = JSON.parse(atob(raw + '='.repeat((4 - (raw.length % 4)) % 4)));
+    if (typeof j.u === 'string' && /^https:\/\//.test(j.u) && typeof j.k === 'string' && j.k.length > 10) return { url: j.u, key: j.k };
+  } catch { /* ignore */ }
+  return null;
+}
+
 export function useSync(store) {
-  const { local, setLocal, mergeRemote, subscribe } = store;
+  const { local, setLocal, mergeRemote, adopt, subscribe } = store;
+  const [choice, setChoice] = useState(null); // перша синхронізація: у хмарі вже є дані — що робити з локальними
   const cfg = local.sync || {};
   const enabled = !!(cfg.url && cfg.key);
   const [client, setClient] = useState(null);
@@ -124,6 +149,14 @@ export function useSync(store) {
         all = all.concat(data);
         if (data.length < 1000) break;
       }
+      // Перше підключення пристрою, у хмарі вже є дані, а на пристрої — свої: питаємо, що робити
+      const firstTime = !meta.lastPull && Object.keys(meta.synced).length === 0 && !meta.merged;
+      if (firstTime && all.some((r) => r.coll !== 'settings' && !r.deleted) && hasBusinessData(stateRef.current)) {
+        setChoice({ rows: all });
+        setStatus('choice');
+        setMessage('Оберіть, що зробити з даними на цьому пристрої');
+        return;
+      }
       if (all.length) {
         mergeRemote(rowsToState(all));
         markSynced(meta, all);
@@ -150,6 +183,24 @@ export function useSync(store) {
       busy.current = false;
     }
   }, [client, session, mergeRemote]);
+
+  /** Відповідь на вибір при першому підключенні: 'cloud' — взяти дані з хмари, 'merge' — об'єднати. */
+  const resolveChoice = useCallback((mode) => {
+    if (!choice) return;
+    const meta = loadMeta();
+    if (mode === 'cloud') {
+      const rows = choice.rows;
+      markSynced(meta, rows);
+      meta.lastPull = rows.length ? rows[rows.length - 1].server_ts : '';
+      saveMeta(meta);
+      adopt(rowsToState(rows));
+    } else {
+      meta.merged = true;
+      saveMeta(meta);
+    }
+    setChoice(null);
+    setTimeout(() => run(mode !== 'cloud'), 50);
+  }, [choice, adopt, run]);
 
   // Перша синхронізація після входу, далі — кожні 30 с, при поверненні у вкладку і після змін
   useEffect(() => {
@@ -188,5 +239,7 @@ export function useSync(store) {
   return useMemo(() => ({
     enabled, status: enabled ? status : 'off', message, email: session?.user?.email || '', loggedIn: !!session,
     signIn, signOut, disconnect, syncNow: () => run(true),
-  }), [enabled, status, message, session, signIn, signOut, disconnect, run]);
+    choice: !!choice, resolveChoice,
+    connectLink: enabled ? makeConnectLink(cfg) : '',
+  }), [enabled, status, message, session, signIn, signOut, disconnect, run, choice, resolveChoice, cfg.url, cfg.key]); // eslint-disable-line react-hooks/exhaustive-deps
 }

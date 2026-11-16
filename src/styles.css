@@ -528,6 +528,13 @@ input.price-in { width: 96px; }
 .extra-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s2); }
 .extra-item { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: 6px var(--s3); border: 1px solid var(--line); border-radius: var(--r-md); min-width: 0; }
 
+/* Вибір при першому підключенні */
+.choice-list { display: flex; flex-direction: column; gap: var(--s2); margin: var(--s3) 0; }
+.choice-btn { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); cursor: pointer; font: inherit; color: inherit; }
+.choice-btn span { font-size: 13px; color: var(--text-2); }
+.choice-btn.primary { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.choice-btn:hover { border-color: var(--accent); }
+
 /* Скрипти */
 .script-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); max-width: 820px; }
 .script-card { padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }

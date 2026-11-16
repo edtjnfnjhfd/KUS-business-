@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { useStore } from './store.js';
 import { computeCosts } from './calc.js';
 import { NAV, ALL_PAGES, permsFor } from './nav.js';
-import { useSync } from './sync.js';
+import { useSync, parseConnectHash } from './sync.js';
+import { Modal } from './components/ui.jsx';
 import { useDailyTelegram } from './telegram.js';
 import LockScreen from './components/LockScreen.jsx';
 import { PrintHost } from './components/Print.jsx';
 
 function initialTab() {
+  if (parseConnectHash(window.location.hash)) return 'settings';
   const h = window.location.hash.replace('#', '');
   return ALL_PAGES.some((t) => t.id === h) ? h : 'pos';
 }
@@ -15,7 +17,12 @@ function initialTab() {
 export default function App() {
   const store = useStore();
   const { state, local, setLocal, saveError } = store;
+  // Посилання «#connect=…» з іншого пристрою: підключаємо ту саму базу (до того, як хеш перезапишеться)
+  const [connectInfo] = useState(() => parseConnectHash(window.location.hash));
   const [tab, setTab] = useState(initialTab);
+  useEffect(() => {
+    if (connectInfo && (local.sync?.url !== connectInfo.url || local.sync?.key !== connectInfo.key)) setLocal({ sync: connectInfo });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [moreOpen, setMoreOpen] = useState(false);
   const costs = useMemo(() => computeCosts(state), [state.ingredients, state.recipes]); // eslint-disable-line react-hooks/exhaustive-deps
   const sync = useSync(store);
@@ -45,7 +52,7 @@ export default function App() {
   const allowed = ALL_PAGES.filter((p) => can(p.perm));
   const page = allowed.find((p) => p.id === tab) || allowed[0];
   const Current = page.C;
-  const props = { ...store, costs, go, can, user, sync };
+  const props = { ...store, costs, go, can, user, sync, openSync: !!connectInfo };
   const bottom = ['pos', 'orders', 'plan', 'reports'].map((id) => allowed.find((p) => p.id === id)).filter(Boolean).slice(0, 4);
 
   const Brand = (
@@ -136,6 +143,22 @@ export default function App() {
             })}
           </div>
         </div>
+      )}
+      {sync.choice && (
+        <Modal title="Перше підключення цього пристрою" onClose={() => {}}>
+          <p>У хмарі вже є дані вашого бізнесу, а на цьому пристрої — свої (наприклад, демо-рецепти або записи, зроблені до підключення).</p>
+          <div className="choice-list">
+            <button className="choice-btn primary" onClick={() => sync.resolveChoice('cloud')}>
+              <b>☁︎ Взяти дані з хмари</b>
+              <span>Рекомендовано. Цей пристрій покаже те саме, що й інші. Те, що було тільки тут, зникне з цього пристрою (на інших нічого не зміниться).</span>
+            </button>
+            <button className="choice-btn" onClick={() => sync.resolveChoice('merge')}>
+              <b>⇄ Об’єднати</b>
+              <span>Записи з цього пристрою додадуться до хмари. Підходить, лише якщо тут є справжні дані, яких немає в хмарі. Демо-рецепти теж потраплять у спільні дані.</span>
+            </button>
+          </div>
+          <p className="muted small">Порада: якщо тут було лише кілька записів (наприклад, стартова сума і пара витрат) — краще взяти дані з хмари і внести ці записи заново.</p>
+        </Modal>
       )}
       <PrintHost />
     </div>

@@ -17,7 +17,7 @@ const TABS = [
 ];
 
 export default function Settings(props) {
-  const [tab, setTab] = useState('brand');
+  const [tab, setTab] = useState(props.openSync ? 'sync' : 'brand');
   const [toast, showToast] = useToast();
   const p = { ...props, toast: showToast };
   return (
@@ -133,13 +133,16 @@ function Sync({ local, setLocal, sync, toast }) {
   };
   return (
     <div className="card pad">
-      <p>Щоб дані були однакові на телефоні, ПК і в кількох працівників — підключіть безкоштовну хмарну базу <b>Supabase</b>. Без неї все працює, але лише в цьому браузері.</p>
+      <p>Щоб дані були однакові на телефоні, ПК і в кількох людей — підключіть безкоштовну хмарну базу <b>Supabase</b>. Без неї все працює, але лише в цьому браузері.</p>
+      {!connected && (
+        <div className="alert info">Інший пристрій уже підключено? Тоді нічого не вводьте тут — відкрийте на цьому пристрої <b>посилання для підключення</b> з того пристрою (Налаштування → Синхронізація).</div>
+      )}
       {!connected && (
         <ol className="steps">
-          <li>Зареєструйтесь на <a href="https://supabase.com" target="_blank" rel="noreferrer">supabase.com</a> → <b>New project</b> (регіон — Frankfurt, пароль бази запишіть).</li>
+          <li>Зареєструйтесь на <a href="https://supabase.com" target="_blank" rel="noreferrer">supabase.com</a> → <b>New project</b> (регіон — Frankfurt; пароль бази просто збережіть, він тут не знадобиться).</li>
           <li>Відкрийте <b>SQL Editor</b>, вставте код нижче й натисніть <b>Run</b>.</li>
-          <li>У <b>Project Settings → API</b> скопіюйте <b>Project URL</b> і <b>anon public</b> key сюди.</li>
-          <li>Створіть обліковий запис нижче (один на весь бізнес) і увійдіть ним на всіх пристроях.</li>
+          <li>У налаштуваннях проєкту (розділ про <b>API</b>) скопіюйте <b>Project URL</b> і публічний ключ (<b>anon public</b> або <b>publishable</b>) у поля нижче → «Підключити».</li>
+          <li>Створіть обліковий запис бізнесу (email + пароль) — один на всіх. Ним входите на кожному пристрої.</li>
         </ol>
       )}
       {!connected && (
@@ -150,8 +153,8 @@ function Sync({ local, setLocal, sync, toast }) {
         </details>
       )}
       <div className="form-grid">
-        <Field label="Project URL"><input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://xxxx.supabase.co" disabled={connected} /></Field>
-        <Field label="anon public key"><input value={key} onChange={(e) => setKey(e.target.value)} placeholder="eyJhbGciOi…" disabled={connected} /></Field>
+        <Field label="Project URL"><input value={connected ? local.sync.url : url} onChange={(e) => setUrl(e.target.value)} placeholder="https://xxxx.supabase.co" disabled={connected} /></Field>
+        <Field label="Публічний ключ (anon / publishable)"><input value={connected ? local.sync.key : key} onChange={(e) => setKey(e.target.value)} placeholder="eyJhbGciOi…" disabled={connected} /></Field>
       </div>
       {!connected ? (
         <button className="btn primary" disabled={!url || !key} onClick={() => setLocal({ sync: { url: url.trim(), key: key.trim() } })}>Підключити</button>
@@ -172,15 +175,26 @@ function Sync({ local, setLocal, sync, toast }) {
               </div>
             </>
           ) : (
-            <div className="row gap wrap">
-              <button className="btn" onClick={() => sync.syncNow()}>⟳ Синхронізувати зараз</button>
-              <button className="btn ghost" onClick={() => sync.signOut()}>Вийти</button>
-            </div>
+            <>
+              <div className="row gap wrap">
+                <button className="btn" onClick={() => sync.syncNow()}>⟳ Синхронізувати зараз</button>
+                <button className="btn ghost" onClick={() => sync.signOut()}>Вийти</button>
+              </div>
+              <div className="card soft">
+                <b>Підключити інший пристрій</b>
+                <p className="small">Надішліть це посилання собі або дівчині (наприклад, у Telegram) і відкрийте його на іншому телефоні чи ПК. Потім там лише увійдіть тим самим email і паролем.</p>
+                <div className="row gap wrap">
+                  <input className="grow" readOnly value={sync.connectLink} onFocus={(e) => e.target.select()} aria-label="Посилання для підключення" />
+                  <button className="btn primary" onClick={async () => { try { await navigator.clipboard.writeText(sync.connectLink); toast('Посилання скопійовано'); } catch { toast('Виділіть і скопіюйте вручну'); } }}>📋 Копіювати</button>
+                </div>
+                <p className="muted small">У посиланні немає пароля — без входу за email і паролем дані ніхто не побачить.</p>
+              </div>
+            </>
           )}
           <button className="btn ghost danger small" style={{ marginTop: 12 }} onClick={() => window.confirm('Відключити синхронізацію на цьому пристрої? Дані в хмарі залишаться.') && sync.disconnect()}>Відключити Supabase</button>
         </>
       )}
-      <p className="muted small">Перший пристрій вивантажує свої дані в хмару, наступні — зливають свої дані з хмарними (нічого не губиться). Якщо на новому пристрої є лише демо-дані — спершу натисніть «Дані → Почати з чистого аркуша».</p>
+      <p className="muted small">Перший підключений пристрій вивантажує свої дані в хмару. На кожному наступному програма спитає: взяти дані з хмари (рекомендовано) чи об’єднати з тим, що є на пристрої. Далі зміни з будь-якого пристрою з’являються на інших протягом ~30 секунд (або одразу після «Синхронізувати зараз»).</p>
     </div>
   );
 }

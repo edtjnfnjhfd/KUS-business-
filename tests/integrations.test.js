@@ -85,3 +85,17 @@ test('Telegram: відправка звіту', async () => {
   assert.match(log[0].body.text, /Виручка/);
   await assert.rejects(sendTelegram({ token: 'T', chatId: '1' }, 'x', fakeFetch(() => ({ status: 401, body: { ok: false, description: 'Unauthorized' } }), [])), /Unauthorized/);
 });
+
+test('sync: посилання для підключення іншого пристрою', async () => {
+  const { makeConnectLink, parseConnectHash, hasBusinessData } = await import('../src/sync.js');
+  const cfg = { url: 'https://abcd.supabase.co', key: 'sb_publishable_1234567890abcdef' };
+  const link = makeConnectLink(cfg, 'https://edtjnfnjhfd.github.io/KUS-business-/');
+  assert.match(link, /^https:\/\/edtjnfnjhfd\.github\.io\/KUS-business-\/#connect=/);
+  assert.deepEqual(parseConnectHash(new URL(link).hash), cfg);
+  assert.equal(parseConnectHash('#pos'), null);
+  assert.equal(parseConnectHash('#connect=notbase64!!'), null);
+  // http (не https) не приймаємо
+  assert.equal(parseConnectHash('#connect=' + btoa(JSON.stringify({ u: 'http://evil', k: 'xxxxxxxxxxxx' }))), null);
+  assert.equal(hasBusinessData(emptyState()), false);
+  assert.equal(hasBusinessData(demoState()), true);
+});
