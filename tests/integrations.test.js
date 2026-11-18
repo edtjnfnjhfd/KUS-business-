@@ -99,3 +99,23 @@ test('sync: посилання для підключення іншого при
   assert.equal(hasBusinessData(emptyState()), false);
   assert.equal(hasBusinessData(demoState()), true);
 });
+
+test('етикетки: лицьова — назва й дати, зворотна — склад і алергени', async () => {
+  const { labelBlocks, mmToPx, labelFileName } = await import('../src/labelImage.js');
+  const s = demoState();
+  const r = s.recipes[0];
+  const front = labelBlocks(s, r, { date: '2026-11-18', weight: 110, variant: 'front' }).map((b) => (b.label || '') + b.text).join('\n');
+  const back = labelBlocks(s, r, { date: '2026-11-18', weight: 110, variant: 'back' }).map((b) => (b.label || '') + b.text).join('\n');
+  assert.match(front, /Виготовлено: 18\.11\.2026/);
+  assert.match(front, /Вжити до: 25\.11\.2026/); // 7 днів у демо
+  assert.match(front, /Маса нетто: 110 г/);
+  assert.ok(!/Склад/.test(front));
+  assert.match(back, /^Склад: Борошно/m);
+  assert.match(back, /Алергени:/);
+  assert.ok(!/Виготовлено/.test(back));
+  // розмір у пікселях під роздільність принтера
+  assert.equal(mmToPx(40, 203), 320);
+  assert.equal(mmToPx(20, 203), 160);
+  assert.equal(mmToPx(40, 300), 472);
+  assert.match(labelFileName(r, '40x20', '2026-11-18', 'front'), /^kus-.*-40x20-front-2026-11-18\.png$/);
+});
