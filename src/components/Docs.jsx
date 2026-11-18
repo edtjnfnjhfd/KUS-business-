@@ -67,15 +67,16 @@ export function InvoiceDoc({ state, sale }) {
 }
 
 /** Етикетки на продукцію. */
-export function LabelSheet({ state, recipe, count, date, size, weight }) {
-  const comp = recipe.composition || labelComposition(state, recipe.id);
+export function LabelSheet({ state, recipe, count, date, size, weight, composition, allergens }) {
+  const comp = composition != null ? composition : recipe.composition || labelComposition(state, recipe.id);
+  const allergenText = allergens != null ? allergens : recipe.allergens;
   const made = new Date(date + 'T12:00');
   const until = recipe.shelfLifeDays ? new Date(made.getTime() + recipe.shelfLifeDays * 86400000) : null;
   const one = (k) => (
     <div key={k} className={'label label-' + size}>
       <div className="lb-head"><b>{state.settings.brandName}</b><span>{recipe.name}</span></div>
       {comp && <div className="lb-comp"><b>Склад:</b> {comp}.</div>}
-      {recipe.allergens && <div className="lb-all"><b>Алергени:</b> {recipe.allergens}</div>}
+      {allergenText && <div className="lb-all"><b>Алергени:</b> {allergenText}</div>}
       <div className="lb-row">
         {weight > 0 && <span>Маса нетто: {num(weight)} г</span>}
         <span>Виготовлено: {fmtDate(made)}</span>

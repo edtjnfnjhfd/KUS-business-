@@ -33,13 +33,18 @@ export default function Labels({ state, update, costs }) {
   const autoWeight = c ? Math.round(c.pieceWeight || 0) : 0;
   const [weight, setWeight] = useState(null);
   const w = weight ?? r?.netWeight ?? autoWeight;
+  // Разова зміна складу (клієнт попросив без горіхів тощо) — лише для цієї етикетки, техкарта не змінюється
+  const [once, setOnce] = useState(null);
+  const stdComp = r ? (r.composition || labelComposition(state, r.id) || '') : '';
+  const stdAll = r ? (r.allergens || '') : '';
+  const startOnce = () => setOnce({ composition: stdComp, allergens: stdAll });
   const set = (patch) => update((d) => { Object.assign(d.recipes.find((x) => x.id === rid), patch); });
   const thermal = size !== 'a4';
 
   useEffect(() => { try { localStorage.setItem(PREF_KEY, JSON.stringify({ size, variant, dpi })); } catch { /* ignore */ } }, [size, variant, dpi]);
 
   // Готова картинка етикетки — і для перегляду, і для завантаження, і для друку
-  const opts = useMemo(() => ({ size, dpi, date, weight: w, variant }), [size, dpi, date, w, variant]);
+  const opts = useMemo(() => ({ size, dpi, date, weight: w, variant, ...(once || {}) }), [size, dpi, date, w, variant, once]);
   useEffect(() => {
     if (!r || !thermal) return;
     const cv = canvasRef.current || (canvasRef.current = document.createElement('canvas'));
@@ -72,7 +77,7 @@ export default function Labels({ state, update, costs }) {
 
   const print = () => {
     if (!thermal) {
-      printDoc(<LabelSheet state={state} recipe={r} count={count} date={date} size="a4" weight={w} />, { page: 'A4', margin: '0' });
+      printDoc(<LabelSheet state={state} recipe={r} count={count} date={date} size="a4" weight={w} {...(once || {})} />, { page: 'A4', margin: '0' });
       return;
     }
     const S = LABEL_SIZES[size];
@@ -95,7 +100,7 @@ export default function Labels({ state, update, costs }) {
         <div className="card pad">
           <div className="form-grid">
             <Field label="Продукт">
-              <select value={rid} onChange={(e) => { setRid(e.target.value); setWeight(null); }}>
+              <select value={rid} onChange={(e) => { setRid(e.target.value); setWeight(null); setOnce(null); }}>
                 {recipes.map((x) => <option key={x.id} value={x.id}>{x.emoji} {x.name}</option>)}
               </select>
             </Field>
@@ -113,7 +118,29 @@ export default function Labels({ state, update, costs }) {
             </Field>
           )}
 
-          <h4>Дані для маркування (зберігаються в техкарті)</h4>
+          <div className={'once-box' + (once ? ' on' : '')}>
+            {!once ? (
+              <>
+                <div className="row between gap wrap">
+                  <b>Склад для цієї етикетки</b>
+                  <button className="btn small" onClick={startOnce}>✎ Змінити лише для цієї етикетки</button>
+                </div>
+                <p className="muted small">Коли клієнт попросив щось додати чи прибрати (наприклад, без горіхів). Стандартний склад у техкарті не зміниться.</p>
+              </>
+            ) : (
+              <>
+                <div className="row between gap wrap">
+                  <b>✎ Разова зміна складу</b>
+                  <button className="btn small ghost" onClick={() => setOnce(null)}>↺ Повернути стандартний</button>
+                </div>
+                <p className="muted small">Діє лише для етикеток, які зараз завантажите чи надрукуєте. Техкарта не змінюється.</p>
+                <Field label="Склад на етикетці"><textarea rows={4} value={once.composition} onChange={(e) => setOnce({ ...once, composition: e.target.value })} /></Field>
+                <Field label="Алергени на етикетці" hint="Якщо прибрали інгредієнт-алерген — приберіть його і тут"><input value={once.allergens} onChange={(e) => setOnce({ ...once, allergens: e.target.value })} /></Field>
+              </>
+            )}
+          </div>
+
+          <h4>Стандартні дані (зберігаються в техкарті)</h4>
           <Field label="Склад" hint="Порожньо — береться з техкарти автоматично, за спаданням маси">
             <textarea rows={3} value={r.composition || ''} placeholder={labelComposition(state, r.id)} onChange={(e) => set({ composition: e.target.value })} />
           </Field>
@@ -150,7 +177,7 @@ export default function Labels({ state, update, costs }) {
           ) : (
             <>
               <div className="label-preview">
-                <LabelSheet state={state} recipe={r} count={1} date={date} size="58x40" weight={w} />
+                <LabelSheet state={state} recipe={r} count={1} date={date} size="58x40" weight={w} {...(once || {})} />
               </div>
               <p className="muted small">А4: 24 етикетки на аркуші (70×37 мм) для звичайного принтера.</p>
             </>

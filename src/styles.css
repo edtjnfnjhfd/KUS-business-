@@ -533,6 +533,9 @@ input.price-in { width: 96px; }
 .label-img { width: 100%; max-width: 440px; height: auto; background: #fff; border-radius: 6px; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18); image-rendering: pixelated; }
 .niimbot-help { margin-top: var(--s3); }
 @media (max-width: 799px) { .label-preview-card { order: -1; } }
+.once-box { border: 1px dashed var(--line); border-radius: var(--r-md); padding: var(--s3); margin: var(--s3) 0; }
+.once-box.on { border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.once-box p { margin: var(--s1) 0 var(--s2); }
 .niimbot-help > summary { cursor: pointer; font-weight: 600; margin-bottom: var(--s2); }
 
 /* Вибір при першому підключенні */

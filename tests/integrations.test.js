@@ -119,3 +119,19 @@ test('етикетки: лицьова — назва й дати, зворот�
   assert.equal(mmToPx(40, 300), 472);
   assert.match(labelFileName(r, '40x20', '2026-11-18', 'front'), /^kus-.*-40x20-front-2026-11-18\.png$/);
 });
+
+test('етикетки: разова зміна складу не чіпає техкарту', async () => {
+  const { labelBlocks } = await import('../src/labelImage.js');
+  const s = demoState();
+  const r = s.recipes[2];
+  const before = JSON.stringify(r);
+  const back = labelBlocks(s, r, { date: '2026-11-18', variant: 'back', composition: 'Борошно, масло, цукор', allergens: 'Глютен, молоко' })
+    .map((b) => (b.label || '') + b.text).join('\n');
+  assert.match(back, /Склад: Борошно, масло, цукор\./);
+  assert.match(back, /Алергени: Глютен, молоко/);
+  assert.ok(!/горіх/i.test(back));
+  assert.equal(JSON.stringify(r), before);
+  // порожні алергени при разовій зміні — рядок зникає
+  const none = labelBlocks(s, r, { date: '2026-11-18', variant: 'back', composition: 'Борошно', allergens: '' }).map((b) => b.label || '').join('');
+  assert.ok(!/Алергени/.test(none));
+});

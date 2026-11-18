@@ -25,8 +25,10 @@ export const defaultVariant = (size) => (size === '40x20' ? 'front' : 'full');
 export const mmToPx = (mm, dpi) => Math.round((mm / 25.4) * dpi);
 
 /** Що саме друкується на етикетці. rel — відносний розмір шрифту. */
-export function labelBlocks(state, recipe, { date, weight, variant = 'full' }) {
-  const comp = (recipe.composition || labelComposition(state, recipe.id) || '').trim();
+export function labelBlocks(state, recipe, { date, weight, variant = 'full', composition, allergens }) {
+  // composition / allergens — разова заміна лише для цієї етикетки (не змінює техкарту)
+  const comp = (composition != null ? composition : recipe.composition || labelComposition(state, recipe.id) || '').trim();
+  const allergenText = (allergens != null ? allergens : recipe.allergens || '').trim();
   const made = new Date(date + 'T12:00');
   const until = recipe.shelfLifeDays ? new Date(made.getTime() + recipe.shelfLifeDays * 86400000) : null;
   const brand = state.settings.brandName || 'KUS';
@@ -40,7 +42,7 @@ export function labelBlocks(state, recipe, { date, weight, variant = 'full' }) {
   }
   if (variant !== 'front') {
     if (comp) blocks.push({ label: 'Склад: ', text: comp.replace(/\.$/, '') + '.', rel: 0.82 });
-    if (recipe.allergens) blocks.push({ label: 'Алергени: ', text: recipe.allergens, rel: 0.82, gapAfter: 0.15 });
+    if (allergenText) blocks.push({ label: 'Алергени: ', text: allergenText, rel: 0.82, gapAfter: 0.15 });
   }
   if (variant !== 'back') {
     if (weight > 0) dates.unshift(`Маса нетто: ${num(weight)} г`);
@@ -77,7 +79,7 @@ function wrap(ctx, block, px, maxW) {
 /**
  * Малює етикетку на canvas. Повертає { fits } — чи вмістився текст без обрізання.
  */
-export function renderLabel(canvas, state, recipe, { size = '40x20', dpi = 203, date, weight, variant }) {
+export function renderLabel(canvas, state, recipe, { size = '40x20', dpi = 203, date, weight, variant, composition, allergens }) {
   const S = LABEL_SIZES[size] || LABEL_SIZES['40x20'];
   const W = mmToPx(S.w, dpi);
   const H = mmToPx(S.h, dpi);
@@ -92,7 +94,7 @@ export function renderLabel(canvas, state, recipe, { size = '40x20', dpi = 203, 
   const pad = mmToPx(S.h <= 20 ? 1.2 : 1.6, dpi);
   const innerW = W - pad * 2;
   const innerH = H - pad * 2;
-  const blocks = labelBlocks(state, recipe, { date, weight, variant: variant || defaultVariant(size) });
+  const blocks = labelBlocks(state, recipe, { date, weight, variant: variant || defaultVariant(size), composition, allergens });
   // Найдрібніший текст, який ще чітко друкується: на 203 dpi крапок менше, тож поріг вищий
   const minPx = mmToPx(dpi >= 300 ? 1.35 : 1.75, dpi);
   const maxPx = Math.round(innerH * 0.3);
